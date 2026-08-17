@@ -1,0 +1,42 @@
+{
+  "name": "supermarket-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@types/react": "^18.2.15",
+    "axios": "^1.4.0",
+    "html5-qrcode": "^2.3.8",
+    "jspdf": "^2.5.1",
+    "jspdf-autotable": "^3.8.2",
+    "lucide-react": "^0.263.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-hot-toast": "^2.4.1",
+    "react-router-dom": "^6.14.2",
+    "recharts": "^2.7.2",
+    "xlsx": "^0.18.5"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.14",
+    "postcss": "^8.4.27",
+    "react-scripts": "5.0.1",
+    "tailwindcss": "^3.3.3"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "proxy": "http://localhost:5000"
+}

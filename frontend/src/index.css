@@ -1,0 +1,503 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens ──────────────────────────────────────────── */
+:root {
+  /* Warm premium retail palette */
+  --bg: #f4f0e7;
+  --bg-card: #fffdf8;
+  --bg-sunken: #ebe3d3;
+  --border: #e6ddc9;
+  --border-strong: #d6cbb2;
+  --text-primary: #2a2318;
+  --text-secondary: #6e6656;
+  --text-muted: #a69c88;
+  --accent: #bf9c5a;
+  --accent-light: #f1e9d4;
+  --accent-dark: #99793c;
+  --sage: #8f9e7d;
+  --sage-light: #dfe5d2;
+  --espresso: #241f16;
+  --danger: #b06a5a;
+  --danger-light: #f3e2db;
+  --success: #6d8560;
+  --success-light: #e3ebda;
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  html {
+    font-size: 15px;
+  }
+  body {
+    font-family: "Outfit", "DM Sans", sans-serif;
+    background-color: var(--bg);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.6;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: "Fraunces", "Playfair Display", serif;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 99px;
+  }
+  ::selection {
+    background: var(--accent-light);
+    color: var(--accent-dark);
+  }
+}
+
+@layer components {
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  }
+  .card-sunken {
+    background: var(--bg-sunken);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 18px;
+    background: var(--text-primary);
+    color: var(--bg);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+  }
+  .btn-primary:hover {
+    background: #2d2926;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  }
+  .btn-primary:active {
+    transform: translateY(0);
+  }
+  .btn-primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .btn-accent {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 18px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+  }
+  .btn-accent:hover {
+    background: var(--accent-dark);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(193, 127, 58, 0.3);
+  }
+  .btn-accent:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 18px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+  }
+  .btn-ghost:hover {
+    background: var(--bg-sunken);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+
+  .btn-danger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 18px;
+    background: var(--danger-light);
+    color: var(--danger);
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 10px;
+    border: 1px solid rgba(184, 64, 64, 0.2);
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+  }
+  .btn-danger:hover {
+    background: #f0d4d4;
+  }
+
+  .input-field {
+    width: 100%;
+    padding: 9px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 13.5px;
+    transition:
+      border-color 0.15s,
+      box-shadow 0.15s;
+    outline: none;
+  }
+  .input-field::placeholder {
+    color: var(--text-muted);
+  }
+  .input-field:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(193, 127, 58, 0.12);
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 99px;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+  .stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 24px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  }
+}
+
+/* Scanner */
+#qr-reader {
+  width: 100% !important;
+  border: none !important;
+  background: transparent !important;
+}
+#qr-reader__scan_region {
+  border-radius: 10px;
+  overflow: hidden;
+}
+#qr-reader video {
+  border-radius: 10px;
+}
+#qr-reader__dashboard {
+  background: transparent !important;
+}
+
+/* Animations */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+}
+
+.fade-in {
+  animation: fadeUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.fade-in-fast {
+  animation: fadeIn 0.15s ease both;
+}
+.pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+.stagger > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.stagger > *:nth-child(2) {
+  animation-delay: 60ms;
+}
+.stagger > *:nth-child(3) {
+  animation-delay: 120ms;
+}
+.stagger > *:nth-child(4) {
+  animation-delay: 180ms;
+}
+
+/* ══════════════════════════════════════════════
+   RESPONSIVE — Mobile first breakpoints
+   ══════════════════════════════════════════════ */
+
+/* ── Layout ─────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Main content gets top padding for hamburger button */
+  main {
+    padding-top: 0 !important;
+  }
+  main > div {
+    padding-top: 56px !important;
+  }
+
+  /* Page padding — tighter on mobile */
+  [style*="padding: 32px 36px"],
+  [style*="padding: 28px 32px"],
+  [style*="padding: 30px 36px"],
+  [style*="padding: 24px 32px"] {
+    padding: 16px !important;
+  }
+
+  /* Dashboard stats — 2 col on mobile */
+  [style*="gridTemplateColumns: repeat(auto-fit, minmax(200px"] {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* Dashboard chart + low stock — stack vertically */
+  [style*="gridTemplateColumns: 1fr 300px"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Stock table — horizontally scrollable */
+  .table-scroll-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 14px;
+  }
+
+  /* Buttons — smaller padding */
+  .btn-primary,
+  .btn-ghost,
+  .btn-accent,
+  .btn-danger {
+    padding: 8px 13px !important;
+    font-size: 12px !important;
+  }
+
+  /* Modal — full screen on mobile */
+  [class*="modal-overlay"] > div,
+  div[style*="maxWidth"] {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    margin: 10px auto !important;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Dashboard stats — single col on very small */
+  [style*="gridTemplateColumns: repeat(auto-fit, minmax(200px"] {
+    grid-template-columns: 1fr !important;
+  }
+  html {
+    font-size: 14px;
+  }
+}
+
+/* ── Billing page ───────────────────────────── */
+@media (max-width: 900px) {
+  /* Billing: stack scanner + cart vertically */
+  .billing-layout {
+    flex-direction: column !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .billing-main {
+    overflow-y: visible !important;
+    padding: 70px 16px 16px !important;
+  }
+  .billing-cart {
+    width: 100% !important;
+    border-left: none !important;
+    border-top: 1px solid var(--border) !important;
+    max-height: 480px;
+  }
+}
+
+/* ── Stock page ─────────────────────────────── */
+@media (max-width: 768px) {
+  /* Stock header buttons — wrap */
+  .stock-header-actions {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+  /* Stock search bar — full width */
+  .stock-search {
+    width: 100% !important;
+  }
+  /* Stock table — hide less important columns */
+  .stock-table th:nth-child(2),
+  .stock-table td:nth-child(2),
+  .stock-table th:nth-child(3),
+  .stock-table td:nth-child(3) {
+    display: none;
+  }
+}
+
+/* ── Reports page ───────────────────────────── */
+@media (max-width: 768px) {
+  [style*="gridTemplateColumns: 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Transaction table ──────────────────────── */
+@media (max-width: 768px) {
+  .transactions-table th:nth-child(3),
+  .transactions-table td:nth-child(3),
+  .transactions-table th:nth-child(4),
+  .transactions-table td:nth-child(4) {
+    display: none;
+  }
+}
+
+/* ── ScanModal ──────────────────────────────── */
+@media (max-width: 768px) {
+  /* Scan modal full width */
+  div[style*="maxWidth: 700"] {
+    max-width: 98vw !important;
+    width: 98vw !important;
+  }
+}
+
+/* ── Bottom nav for mobile (billing) ───────── */
+@media (max-width: 900px) {
+  .mobile-cart-fab {
+    display: flex !important;
+  }
+}
+.mobile-cart-fab {
+  display: none;
+}
+
+/* ── Page content responsive padding ───────── */
+@media (max-width: 768px) {
+  .page-content {
+    padding: 72px 14px 20px !important;
+  }
+  /* Stock/Transactions page wrapper */
+  .stock-page,
+  .transactions-page {
+    padding: 72px 14px 20px !important;
+  }
+}
+
+/* ── Stat cards on small screens ────────────── */
+@media (max-width: 640px) {
+  .stat-card {
+    padding: 16px 16px !important;
+  }
+  .stat-card svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+}
+
+/* ── Modal responsive ───────────────────────── */
+@media (max-width: 600px) {
+  /* Make modals take full width minus small margin */
+  div[role="dialog"] > div,
+  .modal-content {
+    width: 96vw !important;
+    max-width: 96vw !important;
+    padding: 18px !important;
+  }
+  /* Two-col form grids → single col */
+  div[style*="gridTemplateColumns: 1fr 1fr"],
+  div[style*="gridTemplateColumns: '1fr 1fr'"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Billing mobile — cart as bottom sheet ─── */
+@media (max-width: 900px) {
+  .billing-cart {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: 50vh !important;
+    border-radius: 20px 20px 0 0 !important;
+    box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.15) !important;
+    z-index: 30;
+    width: 100% !important;
+  }
+  .billing-main {
+    padding-bottom: calc(50vh + 20px) !important;
+  }
+  .billing-layout {
+    height: auto !important;
+    min-height: 100vh !important;
+  }
+}
+
+/* ── Touch friendly buttons on mobile ───────── */
+@media (max-width: 768px) {
+  button {
+    min-height: 36px;
+  }
+  .input-field {
+    font-size: 16px !important;
+  } /* prevents iOS zoom */
+}

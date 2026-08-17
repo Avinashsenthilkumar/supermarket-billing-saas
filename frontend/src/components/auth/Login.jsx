@@ -1,0 +1,293 @@
+// src/components/auth/Login.jsx
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import { getErrorMessage } from "../../utils/helpers";
+import toast from "react-hot-toast";
+import { Eye, EyeOff } from "lucide-react";
+import { Spinner } from "../shared/UI";
+
+export default function Login() {
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [showPass, setShowPass] = useState(false);
+  const [remember, setRemember] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.email || !form.password)
+      return toast.error("Please enter your email and password");
+    setLoading(true);
+    try {
+      await login(form.email, form.password);
+      navigate("/dashboard");
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "var(--bg)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 1120,
+          minHeight: 640,
+          background: "var(--bg-card)",
+          borderRadius: 28,
+          boxShadow: "0 30px 80px rgba(60,48,25,0.14)",
+          display: "flex",
+          overflow: "hidden",
+          border: "1px solid var(--border)",
+        }}
+      >
+        {/* ── LEFT: warm illustrated panel ── */}
+        <div
+          className="hidden lg:block"
+          style={{
+            width: "46%",
+            position: "relative",
+            background:
+              "linear-gradient(160deg, #efe7d6 0%, #e4dcc6 42%, #cdd3bb 100%)",
+            overflow: "hidden",
+            borderRadius: "28px 0 0 28px",
+          }}
+        >
+          {/* soft arch */}
+          <div
+            style={{
+              position: "absolute",
+              top: 60,
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: 300,
+              height: 360,
+              borderRadius: "150px 150px 0 0",
+              background:
+                "linear-gradient(180deg, rgba(255,252,244,0.55), rgba(255,252,244,0))",
+            }}
+          />
+          {/* hanging lamp */}
+          <div style={{ position: "absolute", top: 0, left: 92 }}>
+            <div style={{ width: 2, height: 120, background: "#b89a63", margin: "0 auto" }} />
+            <div
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: "50%",
+                background: "radial-gradient(circle at 40% 35%, #fff6df, #e8cf95)",
+                boxShadow: "0 8px 30px rgba(232,207,149,0.6)",
+                border: "2px solid #cbb07a",
+              }}
+            />
+          </div>
+          {/* counter / POS scene (simple elegant SVG) */}
+          <svg
+            viewBox="0 0 400 300"
+            style={{ position: "absolute", bottom: 120, left: 0, width: "100%" }}
+          >
+            <rect x="60" y="150" width="280" height="90" rx="10" fill="#c9cdb4" />
+            <rect x="60" y="150" width="280" height="12" rx="6" fill="#b8bda0" />
+            <rect x="95" y="95" width="70" height="58" rx="6" fill="#5f5a4e" />
+            <rect x="103" y="103" width="54" height="34" rx="3" fill="#8f9e7d" />
+            <rect x="120" y="153" width="20" height="34" fill="#4e4a40" />
+            <rect x="108" y="185" width="44" height="8" rx="4" fill="#3f3c34" />
+            <circle cx="250" cy="120" r="26" fill="#e8c9a0" />
+            <rect x="240" y="120" width="20" height="52" rx="9" fill="#d9b98c" />
+            <rect x="285" y="128" width="26" height="46" rx="6" fill="#a9805a" />
+          </svg>
+          {/* leaves accent */}
+          <svg viewBox="0 0 100 120" style={{ position: "absolute", bottom: 150, left: 24, width: 70 }}>
+            <path d="M50 120 Q20 70 40 30 Q55 60 50 120" fill="#8f9e7d" />
+            <path d="M50 120 Q80 75 62 34 Q52 66 50 120" fill="#a3b189" />
+          </svg>
+
+          {/* branding footer */}
+          <div style={{ position: "absolute", bottom: 40, left: 44, right: 44 }}>
+            <p
+              style={{
+                fontSize: 11,
+                letterSpacing: "0.18em",
+                textTransform: "uppercase",
+                color: "#7d7358",
+                fontWeight: 600,
+                marginBottom: 8,
+              }}
+            >
+              Billing App
+            </p>
+            <p
+              style={{
+                fontFamily: "'Fraunces','Playfair Display',serif",
+                fontSize: 28,
+                lineHeight: 1.25,
+                color: "#2f2a1d",
+                fontWeight: 500,
+                letterSpacing: "-0.01em",
+              }}
+            >
+              A premium operating<br />system for modern retail.
+            </p>
+          </div>
+        </div>
+
+        {/* ── RIGHT: form ── */}
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "48px 56px",
+          }}
+        >
+          <div className="fade-in" style={{ width: "100%", maxWidth: 380 }}>
+            {/* logo */}
+            <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 34 }}>
+              <div
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: "50%",
+                  background: "var(--accent-light)",
+                  border: "1px solid var(--accent)",
+                  display: "grid",
+                  placeItems: "center",
+                  color: "var(--accent-dark)",
+                  fontFamily: "'Fraunces',serif",
+                  fontWeight: 600,
+                  fontSize: 17,
+                }}
+              >
+                B
+              </div>
+              <span style={{ fontFamily: "'Fraunces',serif", fontSize: 17, color: "var(--text-primary)" }}>
+                Billing App
+              </span>
+            </div>
+
+            <h1
+              style={{
+                fontFamily: "'Fraunces','Playfair Display',serif",
+                fontSize: 34,
+                fontWeight: 500,
+                color: "var(--text-primary)",
+                letterSpacing: "-0.02em",
+                lineHeight: 1.1,
+              }}
+            >
+              Hello! Welcome Back
+            </h1>
+            <p style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 8, marginBottom: 30 }}>
+              We're glad to see you again.
+            </p>
+
+            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-secondary)" }}>
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  className="input-field"
+                  placeholder="you@yourstore.com"
+                  autoComplete="email"
+                  style={{ borderRadius: 12, padding: "12px 14px" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-secondary)" }}>
+                  Password
+                </label>
+                <div style={{ position: "relative" }}>
+                  <input
+                    type={showPass ? "text" : "password"}
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    className="input-field"
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    style={{ borderRadius: 12, padding: "12px 44px 12px 14px", width: "100%" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPass(!showPass)}
+                    style={{
+                      position: "absolute",
+                      right: 12,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "var(--text-muted)",
+                      display: "flex",
+                    }}
+                  >
+                    {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: -2 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-secondary)", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={remember}
+                    onChange={(e) => setRemember(e.target.checked)}
+                    style={{ accentColor: "var(--accent)", width: 15, height: 15 }}
+                  />
+                  Remember me
+                </label>
+                <span style={{ fontSize: 13, color: "var(--accent-dark)", fontWeight: 600, cursor: "pointer" }}>
+                  Forgot password
+                </span>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  width: "100%",
+                  justifyContent: "center",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "13px 18px",
+                  marginTop: 6,
+                  fontSize: 14.5,
+                  fontWeight: 600,
+                  color: "#f5efe2",
+                  background: "var(--espresso)",
+                  border: "none",
+                  borderRadius: 12,
+                  cursor: loading ? "default" : "pointer",
+                  opacity: loading ? 0.8 : 1,
+                }}
+              >
+                {loading ? <Spinner size={15} color="#f5efe2" /> : null}
+                {loading ? "Signing in…" : "Sign In"}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

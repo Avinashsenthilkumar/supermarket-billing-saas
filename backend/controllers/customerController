@@ -1,0 +1,71 @@
+const { sequelize } = require("../models");
+const { QueryTypes } = require("sequelize");
+
+// GET /api/customers
+const getCustomers = async (req, res, next) => {
+  try {
+    const customers = await sequelize.query(
+      `
+      SELECT
+        TRIM(customer_phone) AS phone,
+        MAX(customer_name) AS name,
+        COUNT(*) AS totalBills,
+        SUM(total_amount) AS totalSpent,
+        MAX(createdAt) AS lastPurchase
+      FROM bills
+      WHERE shop_id = :shopId
+        AND customer_phone IS NOT NULL
+        AND TRIM(customer_phone) <> ''
+      GROUP BY TRIM(customer_phone)
+      ORDER BY lastPurchase DESC
+      `,
+      { replacements: { shopId: req.shopId }, type: QueryTypes.SELECT },
+    );
+
+    res.json({ success: true, data: { customers } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET /api/customers/:phone
+const getCustomerDetails = async (req, res, next) => {
+  try {
+    const { phone } = req.params;
+
+    const summary = await sequelize.query(
+      `
+      SELECT
+        TRIM(customer_phone) AS phone,
+        MAX(customer_name) AS name,
+        COUNT(*) AS totalBills,
+        SUM(total_amount) AS totalSpent,
+        MAX(createdAt) AS lastPurchase
+      FROM bills
+      WHERE shop_id = :shopId AND TRIM(customer_phone) = :phone
+      GROUP BY TRIM(customer_phone)
+      `,
+      { replacements: { phone, shopId: req.shopId }, type: QueryTypes.SELECT },
+    );
+
+    if (summary.length === 0) {
+      return res.status(404).json({ success: false, message: "Customer not found" });
+    }
+
+    const bills = await sequelize.query(
+      `
+      SELECT id, bill_number, total_amount, payment_method, createdAt
+      FROM bills
+      WHERE shop_id = :shopId AND TRIM(customer_phone) = :phone
+      ORDER BY createdAt DESC
+      `,
+      { replacements: { phone, shopId: req.shopId }, type: QueryTypes.SELECT },
+    );
+
+    res.json({ success: true, data: { customer: summary[0], bills } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { getCustomers, getCustomerDetails };
