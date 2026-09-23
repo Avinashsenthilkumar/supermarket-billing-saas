@@ -1,7 +1,8 @@
 // src/components/auth/Login.jsx
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { useSettings } from "../../context/SettingsContext";
 import { getErrorMessage } from "../../utils/helpers";
 import toast from "react-hot-toast";
 import { Eye, EyeOff } from "lucide-react";
@@ -10,10 +11,13 @@ import { Spinner } from "../shared/UI";
 export default function Login() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [showPass, setShowPass] = useState(false);
-  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const { login } = useAuth();
+  const { platform } = useSettings();
   const navigate = useNavigate();
+  const location = useLocation();
+  const brand = platform.platformName || "SuperMart POS";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -21,8 +25,9 @@ export default function Login() {
       return toast.error("Please enter your email and password");
     setLoading(true);
     try {
-      await login(form.email, form.password);
-      navigate("/dashboard");
+      const u = await login(form.email.trim(), form.password);
+      const from = location.state?.from?.pathname;
+      navigate(from && from !== "/login" ? from : u.role === "cashier" && !u.isSuperAdmin ? "/billing" : "/dashboard", { replace: true });
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -127,7 +132,7 @@ export default function Login() {
                 marginBottom: 8,
               }}
             >
-              Billing App
+              {brand}
             </p>
             <p
               style={{
@@ -139,7 +144,7 @@ export default function Login() {
                 letterSpacing: "-0.01em",
               }}
             >
-              A premium operating<br />system for modern retail.
+              {platform.tagline || "A premium operating system for modern retail."}
             </p>
           </div>
         </div>
@@ -172,10 +177,10 @@ export default function Login() {
                   fontSize: 17,
                 }}
               >
-                B
+                {brand[0]}
               </div>
               <span style={{ fontFamily: "'Fraunces',serif", fontSize: 17, color: "var(--text-primary)" }}>
-                Billing App
+                {brand}
               </span>
             </div>
 
@@ -246,19 +251,21 @@ export default function Login() {
               </div>
 
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: -2 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-secondary)", cursor: "pointer" }}>
-                  <input
-                    type="checkbox"
-                    checked={remember}
-                    onChange={(e) => setRemember(e.target.checked)}
-                    style={{ accentColor: "var(--accent)", width: 15, height: 15 }}
-                  />
-                  Remember me
-                </label>
-                <span style={{ fontSize: 13, color: "var(--accent-dark)", fontWeight: 600, cursor: "pointer" }}>
-                  Forgot password
-                </span>
+                <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Staff? Use the login your owner created.</span>
+                <button
+                  type="button"
+                  onClick={() => setShowHelp(!showHelp)}
+                  style={{ fontSize: 13, color: "var(--accent-dark)", fontWeight: 600, cursor: "pointer", background: "none", border: "none" }}
+                >
+                  Forgot password?
+                </button>
               </div>
+              {showHelp && (
+                <div className="card-sunken" style={{ padding: "10px 12px", fontSize: 12.5, color: "var(--text-secondary)" }}>
+                  Staff: ask your shop owner to reset it from <b>Staff</b>. Owners: contact{" "}
+                  {platform.supportPhone || platform.supportEmail || "the platform administrator"} to reset your password.
+                </div>
+              )}
 
               <button
                 type="submit"
@@ -273,18 +280,26 @@ export default function Login() {
                   marginTop: 6,
                   fontSize: 14.5,
                   fontWeight: 600,
-                  color: "#f5efe2",
-                  background: "var(--espresso)",
+                  color: "var(--bg)",
+                  background: "var(--text-primary)",
                   border: "none",
                   borderRadius: 12,
                   cursor: loading ? "default" : "pointer",
                   opacity: loading ? 0.8 : 1,
                 }}
               >
-                {loading ? <Spinner size={15} color="#f5efe2" /> : null}
+                {loading ? <Spinner size={15} color="var(--bg)" /> : null}
                 {loading ? "Signing in…" : "Sign In"}
               </button>
             </form>
+            {platform.allowSignup !== false && (
+              <p style={{ marginTop: 22, fontSize: 13, color: "var(--text-muted)", textAlign: "center" }}>
+                New business?{" "}
+                <Link to="/signup" style={{ color: "var(--accent-dark)", fontWeight: 600 }}>
+                  Start your {platform.trialDays || 14}-day free trial
+                </Link>
+              </p>
+            )}
           </div>
         </div>
       </div>

@@ -3,10 +3,10 @@ import React from "react";
 import ReactDOM from "react-dom";
 import { Loader2, Search } from "lucide-react";
 
-export const Spinner = ({ size = 18, color = "var(--accent)" }) => (
+export const Spinner = ({ size = 18, color = "var(--accent)", style = {} }) => (
   <Loader2
     size={size}
-    style={{ color, animation: "spin 0.8s linear infinite" }}
+    style={{ color, animation: "spin 0.8s linear infinite", flexShrink: 0, ...style }}
   />
 );
 
@@ -96,7 +96,7 @@ export const Modal = ({ isOpen, onClose, title, children, maxWidth = 480 }) => {
         alignItems: "center",
         justifyContent: "center",
         padding: "24px 16px",
-        background: "rgba(26,23,20,0.55)",
+        background: "var(--overlay)",
         backdropFilter: "blur(6px)",
         animation: "fadeIn 0.15s ease",
         boxSizing: "border-box",
@@ -187,7 +187,7 @@ export const StatCard = ({
   label,
   value,
   sub,
-  accentColor = "#bf9c5a",
+  accentColor = "var(--accent)",
 }) => (
   <div className="stat-card fade-in">
     <div
@@ -203,7 +203,7 @@ export const StatCard = ({
           width: 36,
           height: 36,
           borderRadius: 10,
-          background: `${accentColor}15`,
+          background: accentColor.startsWith("#") ? `${accentColor}15` : "var(--bg-sunken)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -356,9 +356,224 @@ export const SectionHeader = ({ title, subtitle, actions }) => (
       )}
     </div>
     {actions && (
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }} className="stock-header-actions">
         {actions}
       </div>
     )}
+  </div>
+);
+
+// ── Additional building blocks ───────────────────────────────────────────────
+export const Page = ({ children, maxWidth = 1280 }) => (
+  <div style={{ padding: "28px 36px", maxWidth }} className="fade-in page-content">
+    {children}
+  </div>
+);
+
+export const Tabs = ({ tabs, value, onChange, style = {} }) => (
+  <div
+    role="tablist"
+    style={{
+      display: "flex",
+      gap: 4,
+      padding: 4,
+      background: "var(--bg-sunken)",
+      border: "1px solid var(--border)",
+      borderRadius: 11,
+      overflowX: "auto",
+      marginBottom: 20,
+      ...style,
+    }}
+  >
+    {tabs.map((t) => {
+      const active = t.value === value;
+      const Icon = t.icon;
+      return (
+        <button
+          key={t.value}
+          role="tab"
+          aria-selected={active}
+          onClick={() => onChange(t.value)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "8px 14px",
+            borderRadius: 8,
+            border: "none",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+            fontSize: 13,
+            fontWeight: active ? 600 : 500,
+            background: active ? "var(--bg-card)" : "transparent",
+            color: active ? "var(--text-primary)" : "var(--text-secondary)",
+            boxShadow: active ? "var(--shadow)" : "none",
+          }}
+        >
+          {Icon && <Icon size={14} style={{ color: active ? "var(--accent)" : "inherit" }} />}
+          {t.label}
+        </button>
+      );
+    })}
+  </div>
+);
+
+export const Pagination = ({ page, pages, onChange }) =>
+  pages > 1 ? (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "12px 18px",
+        borderTop: "1px solid var(--border)",
+      }}
+    >
+      <p style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
+        Page {page} of {pages}
+      </p>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={() => onChange(page - 1)} disabled={page <= 1} className="btn-ghost" style={{ padding: "6px 12px" }}>
+          ‹ Prev
+        </button>
+        <button onClick={() => onChange(page + 1)} disabled={page >= pages} className="btn-ghost" style={{ padding: "6px 12px" }}>
+          Next ›
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+const TONES = {
+  success: ["var(--success-light)", "var(--success)"],
+  danger: ["var(--danger-light)", "var(--danger)"],
+  warning: ["rgba(var(--accent-rgb),0.12)", "var(--accent-dark)"],
+  info: ["var(--info-light)", "var(--info)"],
+  neutral: ["var(--bg-sunken)", "var(--text-secondary)"],
+};
+export const Pill = ({ tone = "neutral", children, style = {} }) => (
+  <span className="badge" style={{ background: TONES[tone][0], color: TONES[tone][1], whiteSpace: "nowrap", ...style }}>
+    {children}
+  </span>
+);
+
+export const Th = ({ children, align = "left", style = {} }) => (
+  <th
+    style={{
+      textAlign: align,
+      padding: "11px 16px",
+      color: "var(--text-muted)",
+      fontWeight: 500,
+      fontSize: 11.5,
+      letterSpacing: "0.04em",
+      textTransform: "uppercase",
+      whiteSpace: "nowrap",
+      borderBottom: "1px solid var(--border)",
+      ...style,
+    }}
+  >
+    {children}
+  </th>
+);
+
+export const Td = ({ children, align = "left", mono = false, muted = false, style = {}, ...rest }) => (
+  <td
+    style={{
+      textAlign: align,
+      padding: "12px 16px",
+      color: muted ? "var(--text-muted)" : "var(--text-primary)",
+      fontFamily: mono ? "JetBrains Mono, monospace" : undefined,
+      fontSize: mono ? 12.5 : 13.5,
+      borderBottom: "1px solid var(--border)",
+      verticalAlign: "middle",
+      ...style,
+    }}
+    {...rest}
+  >
+    {children}
+  </td>
+);
+
+export const Table = ({ children, minWidth = 640 }) => (
+  <div className="table-scroll-wrapper" style={{ overflowX: "auto" }}>
+    <table style={{ width: "100%", borderCollapse: "collapse", minWidth }}>{children}</table>
+  </div>
+);
+
+export const Field = ({ label, children, hint, required, span = 1 }) => (
+  <div style={{ gridColumn: `span ${span}`, minWidth: 0 }}>
+    <FormField label={label} hint={hint} required={required}>
+      {children}
+    </FormField>
+  </div>
+);
+
+export const Grid = ({ cols = 2, gap = 12, children, style = {} }) => (
+  <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap, ...style }} className="form-grid">
+    {children}
+  </div>
+);
+
+export const Toggle = ({ checked, onChange, label, description }) => (
+  <label style={{ display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer", padding: "6px 0" }}>
+    <span
+      onClick={(e) => {
+        e.preventDefault();
+        onChange(!checked);
+      }}
+      role="switch"
+      aria-checked={checked}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === " " || e.key === "Enter") {
+          e.preventDefault();
+          onChange(!checked);
+        }
+      }}
+      style={{
+        flexShrink: 0,
+        width: 38,
+        height: 22,
+        borderRadius: 99,
+        background: checked ? "var(--accent)" : "var(--border-strong)",
+        position: "relative",
+        transition: "background 0.15s",
+        marginTop: 1,
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          top: 3,
+          left: checked ? 19 : 3,
+          width: 16,
+          height: 16,
+          borderRadius: "50%",
+          background: "#fff",
+          transition: "left 0.15s",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+        }}
+      />
+    </span>
+    <span>
+      <span style={{ display: "block", fontSize: 13.5, color: "var(--text-primary)", fontWeight: 500 }}>{label}</span>
+      {description && <span style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginTop: 1 }}>{description}</span>}
+    </span>
+  </label>
+);
+
+export const MiniStat = ({ label, value, tone }) => (
+  <div className="card" style={{ padding: "14px 16px" }}>
+    <p style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</p>
+    <p
+      className="tabular"
+      style={{
+        fontSize: 19,
+        fontWeight: 600,
+        marginTop: 3,
+        color: tone === "danger" ? "var(--danger)" : tone === "success" ? "var(--success)" : tone === "accent" ? "var(--accent-dark)" : "var(--text-primary)",
+      }}
+    >
+      {value}
+    </p>
   </div>
 );

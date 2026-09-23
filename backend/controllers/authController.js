@@ -1,184 +1,84 @@
 // controllers/authController.js
-const jwt = require('jsonwebtoken');
-const { sequelize, User, Shop } = require('../models');
+const { User, Shop } = require("../models/master");
+const { signToken, isSuperAdminUser } = require("../middleware/auth");
+const { asyncHandler, HttpError, str } = require("../utils/helpers");
+const { getPlatformSettings } = require("../utils/settings");
+const { shopPayload } = require("../utils/shopPayload");
+const { createShopWithOwner } = require("../utils/shopService");
 
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '24h',
+const sessionPayload = async (user, shop) => {
+  const platform = await getPlatformSettings();
+  const superAdmin = isSuperAdminUser(user);
+  return {
+    user: { ...user.toSafeJSON(), isSuperAdmin: superAdmin },
+    shop: shopPayload(shop, platform, superAdmin),
+  };
+};
+
+// POST /api/auth/register — public SaaS signup (creates business + owner + private DB)
+const register = asyncHandler(async (req, res) => {
+  const platform = await getPlatformSettings();
+  if (!platform.allowSignup) throw new HttpError(403, "New signups are currently closed. Contact the administrator.");
+
+  const { shopName, username, email, password, phone, address, businessType } = req.body || {};
+  const { shop, user } = await createShopWithOwner({ shopName, username, email, password, phone, address, businessType });
+  const token = signToken(user);
+  res.status(201).json({
+    success: true,
+    message: "Account created successfully",
+    data: { token, ...(await sessionPayload(user, shop)) },
   });
-};
+});
 
-const TRIAL_DAYS = parseInt(process.env.TRIAL_DAYS || '14', 10);
+// POST /api/auth/login
+const login = asyncHandler(async (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const password = req.body?.password;
+  if (!email || !password) throw new HttpError(400, "Email and password are required");
 
-// @desc    Register a new shop + owner account (SaaS signup)
-// @route   POST /api/auth/register
-// @access  Public
-const register = async (req, res, next) => {
-  const t = await sequelize.transaction();
-  try {
-    const { shopName, username, email, password, phone } = req.body;
+  const user = await User.findOne({ where: { email }, include: [{ model: Shop, as: "shop" }] });
+  if (!user || !(await user.comparePassword(password))) throw new HttpError(401, "Invalid email or password");
+  if (!user.isActive) throw new HttpError(403, "Your account is disabled. Contact your shop owner.");
+  if (!user.shop) throw new HttpError(403, "Shop not found");
+  if (!user.shop.isActive && !isSuperAdminUser(user)) throw new HttpError(403, "Your shop is inactive. Contact support.");
 
-    if (!shopName || !email || !password) {
-      await t.rollback();
-      return res.status(400).json({
-        success: false,
-        message: 'Shop name, email and password are required',
-      });
-    }
+  user.lastLoginAt = new Date();
+  await user.save({ fields: ["lastLoginAt"] });
 
-    // Email must be globally unique (it is the login id)
-    const existing = await User.findOne({ where: { email }, transaction: t });
-    if (existing) {
-      await t.rollback();
-      return res.status(409).json({ success: false, message: 'Email already registered' });
-    }
+  res.json({
+    success: true,
+    message: "Login successful",
+    data: { token: signToken(user), ...(await sessionPayload(user, user.shop)) },
+  });
+});
 
-    // 1) Create the shop (tenant) with a free trial
-    const trialEnds = new Date();
-    trialEnds.setDate(trialEnds.getDate() + TRIAL_DAYS);
+// GET /api/auth/me
+const getMe = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await sessionPayload(req.user, req.shop) });
+});
 
-    const shop = await Shop.create({
-      name: shopName,
-      ownerEmail: email,
-      phone: phone || null,
-      plan: 'free',
-      subscriptionEnds: trialEnds,
-      isActive: true,
-    }, { transaction: t });
+// PUT /api/auth/profile
+const updateProfile = asyncHandler(async (req, res) => {
+  const username = str(req.body?.username, 60);
+  const phone = str(req.body?.phone, 20);
+  if (!username) throw new HttpError(400, "Name is required");
+  const user = await User.findByPk(req.user.id);
+  user.username = username;
+  user.phone = phone;
+  await user.save();
+  res.json({ success: true, message: "Profile updated", data: { user: { ...user.toSafeJSON(), isSuperAdmin: req.isSuperAdmin } } });
+});
 
-    // 2) Create the owner user inside that shop
-    const user = await User.create({
-      shopId: shop.id,
-      username: username || 'owner',
-      email,
-      password,
-      role: 'owner',
-    }, { transaction: t });
+// PUT /api/auth/change-password
+const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !newPassword) throw new HttpError(400, "Both passwords are required");
+  if (String(newPassword).length < 6) throw new HttpError(400, "New password must be at least 6 characters");
+  const user = await User.findByPk(req.user.id);
+  if (!(await user.comparePassword(currentPassword))) throw new HttpError(400, "Current password is incorrect");
+  user.password = String(newPassword);
+  await user.save();
+  res.json({ success: true, message: "Password updated successfully" });
+});
 
-    await t.commit();
-
-    const token = generateToken(user.id);
-
-    res.status(201).json({
-      success: true,
-      message: 'Account created successfully',
-      data: {
-        token,
-        user: { id: user.id, username: user.username, email: user.email, role: user.role, shopId: shop.id },
-        shop: { id: shop.id, name: shop.name, plan: shop.plan, subscriptionEnds: shop.subscriptionEnds },
-      },
-    });
-  } catch (error) {
-    await t.rollback();
-    next(error);
-  }
-};
-
-// @desc    Login
-// @route   POST /api/auth/login
-// @access  Public
-const login = async (req, res, next) => {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ success: false, message: 'Email and password are required' });
-    }
-
-    const user = await User.findOne({
-      where: { email },
-      include: [{ model: Shop, as: 'shop' }],
-    });
-
-    if (!user || !user.isActive) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials' });
-    }
-
-    if (!user.shop || !user.shop.isActive) {
-      return res.status(403).json({ success: false, message: 'Shop is inactive. Contact support.' });
-    }
-
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials' });
-    }
-
-    const token = generateToken(user.id);
-
-    res.json({
-      success: true,
-      message: 'Login successful',
-      data: {
-        token,
-        user: { id: user.id, username: user.username, email: user.email, role: user.role, shopId: user.shopId },
-        shop: {
-          id: user.shop.id,
-          name: user.shop.name,
-          plan: user.shop.plan,
-          subscriptionEnds: user.shop.subscriptionEnds,
-        },
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get current user profile
-// @route   GET /api/auth/me
-// @access  Private
-const getMe = async (req, res, next) => {
-  try {
-    res.json({
-      success: true,
-      data: {
-        user: {
-          id: req.user.id,
-          username: req.user.username,
-          email: req.user.email,
-          role: req.user.role,
-          shopId: req.user.shopId,
-        },
-        shop: req.user.shop
-          ? {
-              id: req.user.shop.id,
-              name: req.user.shop.name,
-              plan: req.user.shop.plan,
-              subscriptionEnds: req.user.shop.subscriptionEnds,
-            }
-          : null,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Change password
-// @route   PUT /api/auth/change-password
-// @access  Private
-const changePassword = async (req, res, next) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ success: false, message: 'Both passwords are required' });
-    }
-
-    const user = await User.findByPk(req.user.id);
-    const isMatch = await user.comparePassword(currentPassword);
-
-    if (!isMatch) {
-      return res.status(400).json({ success: false, message: 'Current password is incorrect' });
-    }
-
-    user.password = newPassword;
-    await user.save();
-
-    res.json({ success: true, message: 'Password updated successfully' });
-  } catch (error) {
-    next(error);
-  }
-};
-
-module.exports = { register, login, getMe, changePassword };
+module.exports = { register, login, getMe, updateProfile, changePassword };

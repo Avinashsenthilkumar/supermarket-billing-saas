@@ -1,295 +1,154 @@
-import React, { useEffect, useState } from "react";
+// src/components/customers/Customers.jsx
+import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
+import { Users, Plus, Download } from "lucide-react";
 import { customerAPI } from "../../services/api";
-import { Users, Receipt, IndianRupee, Search } from "lucide-react";
+import { formatCurrency, formatDate, getErrorMessage, debounce, num, downloadCSV } from "../../utils/helpers";
+import { Page, SectionHeader, SearchInput, PageLoader, EmptyState, Table, Th, Td, Pagination, MiniStat, Pill } from "../shared/UI";
+import CustomerForm from "./CustomerForm";
 
 export default function Customers() {
-  const [customers, setCustomers] = useState([]);
-  const [filtered, setFiltered] = useState([]);
-  const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const [rows, setRows] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState("recent");
+  const [dueOnly, setDueOnly] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
 
-  useEffect(() => {
-    loadCustomers();
-  }, []);
-
-  useEffect(() => {
-    const q = search.toLowerCase();
-
-    setFiltered(
-      customers.filter(
-        (c) => c.name?.toLowerCase().includes(q) || c.phone?.includes(search),
-      ),
-    );
-  }, [search, customers]);
-
-  const loadCustomers = async () => {
+  const load = useCallback(async (p, q, s, d) => {
+    setLoading(true);
     try {
-      setLoading(true);
-
-      const res = await customerAPI.getAll();
-
-      setCustomers(res.data.data.customers);
-      setFiltered(res.data.data.customers);
-    } catch (err) {
-      console.error(err);
+      const r = await customerAPI.getAll({ page: p, limit: 50, search: q || undefined, sort: s, due: d ? "true" : undefined });
+      setRows(r.data.data.customers);
+      setTotal(r.data.data.total);
+      setPages(r.data.data.pages);
+      setSummary(r.data.data.summary);
+    } catch (e) {
+      toast.error(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const totalCustomers = customers.length;
+  useEffect(() => {
+    load(page, search, sort, dueOnly);
+  }, [page, sort, dueOnly]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const totalRevenue = customers.reduce(
-    (sum, c) => sum + Number(c.totalSpent || 0),
-    0,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const debounced = useCallback(
+    debounce((q, s, d) => {
+      setPage(1);
+      load(1, q, s, d);
+    }, 350),
+    [],
   );
 
-  const repeatCustomers = customers.filter(
-    (c) => Number(c.totalBills) > 1,
-  ).length;
-
   return (
-    <div
-      style={{
-        padding: 30,
-        background: "#f8f6f2",
-        minHeight: "100vh",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 30,
-        }}
-      >
-        <div>
-          <h1
-            style={{
-              fontSize: 34,
-              fontFamily: "'Fraunces', serif",
-              marginBottom: 8,
-            }}
-          >
-            Customers
-          </h1>
-
-          <p style={{ color: "#777" }}>View all customer purchase history.</p>
+    <Page>
+      <SectionHeader
+        title="Customers"
+        subtitle={`${total} customers`}
+        actions={
+          <>
+            <button
+              className="btn-ghost"
+              onClick={() =>
+                downloadCSV("customers.csv", [
+                  ["Name", "Phone", "Email", "Bills", "Total spent", "Due", "Points", "Last purchase"],
+                  ...rows.map((c) => [c.name, c.phone, c.email, c.totalBills, c.totalSpent, c.balance, c.loyaltyPoints, c.lastPurchaseAt ? formatDate(c.lastPurchaseAt) : ""]),
+                ])
+              }
+            >
+              <Download size={13} /> Export
+            </button>
+            <button className="btn-primary" onClick={() => setShowForm(true)}>
+              <Plus size={14} /> Add customer
+            </button>
+          </>
+        }
+      />
+      {summary && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 16 }}>
+          <MiniStat label="Total customers" value={total} />
+          <MiniStat label="Pending dues (to collect)" value={formatCurrency(summary.totalDue)} tone="danger" />
+          <MiniStat label="Lifetime sales" value={formatCurrency(summary.totalSpent)} />
+          <MiniStat label="Loyalty points outstanding" value={num(summary.totalPoints).toLocaleString()} tone="accent" />
         </div>
-
-        <div
-          style={{
-            width: 320,
-            display: "flex",
-            alignItems: "center",
-            background: "#fff",
-            borderRadius: 10,
-            border: "1px solid #e5e5e5",
-            padding: "10px 14px",
+      )}
+      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+        <SearchInput
+          value={search}
+          onChange={(v) => {
+            setSearch(v);
+            debounced(v, sort, dueOnly);
           }}
-        >
-          <Search size={18} color="#999" />
-
-          <input
-            placeholder="Search customer..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{
-              border: "none",
-              outline: "none",
-              flex: 1,
-              marginLeft: 10,
-              fontSize: 14,
-              background: "transparent",
-            }}
-          />
-        </div>
+          placeholder="Search name, phone, email…"
+          style={{ width: 300 }}
+        />
+        <select className="input-field" style={{ width: 170 }} value={sort} onChange={(e) => (setPage(1), setSort(e.target.value))}>
+          <option value="recent">Recent purchase</option>
+          <option value="spent">Top spenders</option>
+          <option value="due">Highest due</option>
+          <option value="name">Name A–Z</option>
+        </select>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-secondary)" }}>
+          <input type="checkbox" checked={dueOnly} onChange={(e) => (setPage(1), setDueOnly(e.target.checked))} style={{ accentColor: "var(--accent)" }} /> With dues only
+        </label>
       </div>
 
-      {/* Cards */}
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3,1fr)",
-          gap: 20,
-          marginBottom: 30,
-        }}
-      >
-        <Card
-          title="Customers"
-          value={totalCustomers}
-          icon={<Users color="#bf9c5a" />}
-        />
-
-        <Card
-          title="Total Revenue"
-          value={`₹${totalRevenue.toFixed(2)}`}
-          icon={<IndianRupee color="#3a7a5a" />}
-        />
-
-        <Card
-          title="Repeat Customers"
-          value={repeatCustomers}
-          icon={<Receipt color="#3366ff" />}
-        />
-      </div>
-
-      <div
-        style={{
-          background: "#fff",
-          borderRadius: 14,
-          border: "1px solid #e5e5e5",
-          overflow: "hidden",
-        }}
-      >
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-          }}
-        >
-          <thead
-            style={{
-              background: "#fafafa",
-            }}
-          >
-            <tr>
-              <Th>Customer</Th>
-              <Th>Phone</Th>
-              <Th>Total Bills</Th>
-              <Th>Total Purchase</Th>
-              <Th>Last Purchase</Th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {loading ? (
-              <tr>
-                <td
-                  colSpan="5"
-                  style={{
-                    textAlign: "center",
-                    padding: 40,
-                  }}
-                >
-                  Loading...
-                </td>
-              </tr>
-            ) : filtered.length === 0 ? (
-              <tr>
-                <td
-                  colSpan="5"
-                  style={{
-                    textAlign: "center",
-                    padding: 40,
-                  }}
-                >
-                  No customers found
-                </td>
-              </tr>
-            ) : (
-              filtered.map((c, i) => (
-                <tr
-                  key={i}
-                  onClick={() =>
-                    navigate(`/customers/${encodeURIComponent(c.phone)}`)
-                  }
-                  style={{
-                    borderTop: "1px solid #eee",
-                    cursor: "pointer",
-                    transition: "0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "#faf9f7";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "white";
-                  }}
-                >
-                  <Td>{c.name || "-"}</Td>
-
-                  <Td>{c.phone}</Td>
-
-                  <Td>{c.totalBills}</Td>
-
-                  <Td>₹{Number(c.totalSpent).toFixed(2)}</Td>
-
-                  <Td>{new Date(c.lastPurchase).toLocaleDateString()}</Td>
+      <div className="card" style={{ overflow: "hidden" }}>
+        {loading ? (
+          <PageLoader />
+        ) : rows.length === 0 ? (
+          <EmptyState icon={Users} title="No customers yet" description="Customers are saved automatically when you enter a phone number while billing." />
+        ) : (
+          <>
+            <Table minWidth={760}>
+              <thead>
+                <tr>
+                  <Th>Customer</Th>
+                  <Th align="right">Bills</Th>
+                  <Th align="right">Total spent</Th>
+                  <Th align="right">Due</Th>
+                  <Th align="right">Points</Th>
+                  <Th>Last purchase</Th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {rows.map((c) => (
+                  <tr key={c.id} className="table-row-hover" style={{ cursor: "pointer" }} onClick={() => navigate(`/customers/${c.id}`)}>
+                    <Td>
+                      <p style={{ fontWeight: 500 }}>{c.name}</p>
+                      <p style={{ fontSize: 12, color: "var(--text-muted)" }}>{c.phone}</p>
+                    </Td>
+                    <Td align="right" mono>
+                      {c.totalBills}
+                    </Td>
+                    <Td align="right" mono>
+                      {formatCurrency(c.totalSpent)}
+                    </Td>
+                    <Td align="right">
+                      {num(c.balance) > 0 ? <Pill tone="danger">{formatCurrency(c.balance)}</Pill> : num(c.balance) < 0 ? <Pill tone="success">Adv {formatCurrency(-num(c.balance))}</Pill> : "—"}
+                    </Td>
+                    <Td align="right" mono>
+                      {num(c.loyaltyPoints)}
+                    </Td>
+                    <Td muted>{c.lastPurchaseAt ? formatDate(c.lastPurchaseAt) : "—"}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+            <Pagination page={page} pages={pages} onChange={setPage} />
+          </>
+        )}
       </div>
-    </div>
-  );
-}
-
-function Card({ title, value, icon }) {
-  return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: 14,
-        padding: 22,
-        border: "1px solid #e5e5e5",
-      }}
-    >
-      <div
-        style={{
-          marginBottom: 15,
-        }}
-      >
-        {icon}
-      </div>
-
-      <h2
-        style={{
-          fontSize: 28,
-          margin: 0,
-        }}
-      >
-        {value}
-      </h2>
-
-      <p
-        style={{
-          color: "#777",
-          marginTop: 8,
-        }}
-      >
-        {title}
-      </p>
-    </div>
-  );
-}
-
-function Th({ children }) {
-  return (
-    <th
-      style={{
-        textAlign: "left",
-        padding: 18,
-        fontWeight: 600,
-      }}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({ children }) {
-  return (
-    <td
-      style={{
-        padding: 18,
-      }}
-    >
-      {children}
-    </td>
+      <CustomerForm isOpen={showForm} onClose={() => setShowForm(false)} onSaved={(c) => navigate(`/customers/${c.id}`)} />
+    </Page>
   );
 }

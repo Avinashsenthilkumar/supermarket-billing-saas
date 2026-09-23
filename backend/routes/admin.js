@@ -1,14 +1,21 @@
-// routes/admin.js
-const express = require('express');
-const router = express.Router();
-const { protect, requireSuperAdmin } = require('../middleware/auth');
-const { getStats, getShops, createShop, toggleShop } = require('../controllers/adminController');
+// Platform super-admin routes
+const router = require("express").Router();
+const c = require("../controllers/adminController");
+const { protect, requireSuperAdmin } = require("../middleware/auth");
 
-router.use(protect, requireSuperAdmin); // every admin route is gated
+router.use(protect, requireSuperAdmin);
 
-router.get('/stats', getStats);
-router.get('/shops', getShops);
-router.post('/shops', createShop);
-router.patch('/shops/:id/toggle', toggleShop);
+router.get("/stats", c.getStats);
+router.get("/settings", c.getPlatform);
+router.put("/settings", c.updatePlatform);
+router.get("/shops", c.getShops);
+router.post("/shops", c.createShop);
+router.get("/shops/:id", c.getShop);
+router.put("/shops/:id", c.updateShop);
+router.delete("/shops/:id", c.deleteShop);
+router.patch("/shops/:id/toggle", c.toggleShop);
+router.post("/shops/:id/reset-password", c.resetPassword);
+router.post("/shops/:id/login-as", c.loginAs);
+router.post("/shops/:id/repair-db", c.repairDb);
 
 module.exports = router;

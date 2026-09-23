@@ -1,15 +1,16 @@
-const express = require("express");
-const router = express.Router();
+const router = require("express").Router();
+const c = require("../controllers/customerController");
+const { protect, allow, requireActiveSubscription } = require("../middleware/auth");
 
-const { protect } = require("../middleware/auth");
-const {
-  getCustomers,
-  getCustomerDetails,
-} = require("../controllers/customerController");
+router.use(protect, requireActiveSubscription);
 
-router.use(protect);
-
-router.get("/", getCustomers);
-router.get("/:phone", getCustomerDetails);
+router.get("/", c.getCustomers);
+router.get("/lookup", c.lookupCustomer);
+router.post("/", c.createCustomer);
+router.get("/:id", c.getCustomer);
+router.put("/:id", c.updateCustomer);
+router.delete("/:id", allow("owner", "manager"), c.deleteCustomer);
+router.post("/:id/payments", c.receivePayment);
+router.post("/:id/points", allow("owner", "manager"), c.adjustPoints);
 
 module.exports = router;

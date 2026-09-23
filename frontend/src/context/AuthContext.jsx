@@ -1,69 +1,138 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { authAPI } from '../services/api';
+// src/context/AuthContext.jsx
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { authAPI } from "../services/api";
 
 const AuthContext = createContext(null);
-const SUPER_ADMIN_EMAIL = 'admin@supermarket.com';
+
+const read = (key) => {
+  try {
+    return JSON.parse(localStorage.getItem(key));
+  } catch {
+    return null;
+  }
+};
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('user')); } catch { return null; }
-  });
-  const [shop, setShop] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('shop')); } catch { return null; }
-  });
-  const [token, setToken] = useState(() => localStorage.getItem('token'));
-  const [loading, setLoading] = useState(!!localStorage.getItem('token'));
+  const [user, setUser] = useState(() => read("user"));
+  const [shop, setShop] = useState(() => read("shop"));
+  const [token, setToken] = useState(() => localStorage.getItem("token"));
+  const [loading, setLoading] = useState(!!localStorage.getItem("token"));
+  const [subscriptionExpired, setSubscriptionExpired] = useState(false);
 
-  const persist = (t, u, s) => {
-    localStorage.setItem('token', t);
-    localStorage.setItem('user', JSON.stringify(u));
-    if (s) localStorage.setItem('shop', JSON.stringify(s));
+  const persist = useCallback((t, u, s) => {
+    localStorage.setItem("token", t);
+    localStorage.setItem("user", JSON.stringify(u));
+    if (s) localStorage.setItem("shop", JSON.stringify(s));
     setToken(t);
     setUser(u);
     if (s) setShop(s);
-  };
-
-  const login = useCallback(async (email, password) => {
-    const res = await authAPI.login({ email, password });
-    const { token: t, user: u, shop: s } = res.data.data;
-    persist(t, u, s);
-    return u;
+    setSubscriptionExpired(s ? !s.subscriptionActive : false);
   }, []);
 
-  const register = useCallback(async (payload) => {
-    const res = await authAPI.register(payload);
-    const { token: t, user: u, shop: s } = res.data.data;
-    persist(t, u, s);
-    return u;
+  const login = useCallback(
+    async (email, password) => {
+      const res = await authAPI.login({ email, password });
+      const { token: t, user: u, shop: s } = res.data.data;
+      persist(t, u, s);
+      return u;
+    },
+    [persist],
+  );
+
+  const register = useCallback(
+    async (payload) => {
+      const res = await authAPI.register(payload);
+      const { token: t, user: u, shop: s } = res.data.data;
+      persist(t, u, s);
+      return u;
+    },
+    [persist],
+  );
+
+  // Used by platform admin "Open shop" (support access). Keeps admin token to come back.
+  const loginWithSession = useCallback(
+    ({ token: t, user: u, shop: s }) => {
+      const current = localStorage.getItem("token");
+      if (current && !localStorage.getItem("adminToken")) localStorage.setItem("adminToken", current);
+      persist(t, u, s);
+      window.location.href = "/dashboard";
+    },
+    [persist],
+  );
+
+  const returnToAdmin = useCallback(() => {
+    const adminToken = localStorage.getItem("adminToken");
+    localStorage.removeItem("adminToken");
+    if (adminToken) {
+      localStorage.setItem("token", adminToken);
+      localStorage.removeItem("user");
+      localStorage.removeItem("shop");
+      window.location.href = "/admin";
+    }
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('shop');
+    ["token", "user", "shop", "adminToken"].forEach((k) => localStorage.removeItem(k));
     setToken(null);
     setUser(null);
     setShop(null);
   }, []);
 
-  useEffect(() => {
-    if (!token) { setLoading(false); return; }
-    authAPI.getMe()
-      .then((res) => {
-        setUser(res.data.data.user);
-        if (res.data.data.shop) {
-          setShop(res.data.data.shop);
-          localStorage.setItem('shop', JSON.stringify(res.data.data.shop));
-        }
-      })
-      .catch(() => { logout(); })
-      .finally(() => setLoading(false));
-  }, []); // eslint-disable-line
+  const refresh = useCallback(async () => {
+    const res = await authAPI.getMe();
+    const { user: u, shop: s } = res.data.data;
+    setUser(u);
+    setShop(s);
+    localStorage.setItem("user", JSON.stringify(u));
+    localStorage.setItem("shop", JSON.stringify(s));
+    setSubscriptionExpired(s ? !s.subscriptionActive : false);
+    return res.data.data;
+  }, []);
 
-  const isSuperAdmin = !!user && user.email === SUPER_ADMIN_EMAIL;
+  useEffect(() => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    refresh()
+      .catch((err) => {
+        if (err?.response?.status === 401 || err?.response?.status === 403) logout();
+      })
+      .finally(() => setLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const onExpired = () => setSubscriptionExpired(true);
+    window.addEventListener("subscription-expired", onExpired);
+    return () => window.removeEventListener("subscription-expired", onExpired);
+  }, []);
+
+  const role = user?.role || "cashier";
+  const isSuperAdmin = !!user?.isSuperAdmin;
+  const can = useCallback((...roles) => isSuperAdmin || roles.includes(role), [isSuperAdmin, role]);
 
   return (
-    <AuthContext.Provider value={{ user, shop, token, loading, login, register, logout, isSuperAdmin, isAuthenticated: !!token }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        setUser,
+        shop,
+        token,
+        loading,
+        login,
+        register,
+        logout,
+        refresh,
+        loginWithSession,
+        returnToAdmin,
+        isImpersonating: !!localStorage.getItem("adminToken"),
+        isSuperAdmin,
+        role,
+        can,
+        subscriptionExpired,
+        isAuthenticated: !!token,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -71,6 +140,6 @@ export const AuthProvider = ({ children }) => {
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be inside AuthProvider');
+  if (!ctx) throw new Error("useAuth must be inside AuthProvider");
   return ctx;
 };

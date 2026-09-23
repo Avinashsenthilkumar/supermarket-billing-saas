@@ -238,7 +238,7 @@ export default function BarcodeGenerator() {
         mrp: form.mrp ? parseFloat(form.mrp) : null,
         quantity: 0,
         category: form.category || "",
-        description: form.qty ? `Net Qty: ${form.qty}` : "",
+        netQty: form.qty || "",
       });
       setSavedBarcodes((prev) => new Set([...prev, form.barcode]));
       toast.success(`"${form.name}" saved to stock!`);

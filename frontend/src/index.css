@@ -4,18 +4,22 @@
 
 /* ── Design tokens ──────────────────────────────────────────── */
 :root {
-  /* Warm premium retail palette */
+  /* Warm premium retail palette (light) — accent vars are overwritten at runtime from Settings */
   --bg: #f4f0e7;
   --bg-card: #fffdf8;
   --bg-sunken: #ebe3d3;
+  --bg-secondary: #f1ebdf;
+  --bg-primary: #fffdf8;
   --border: #e6ddc9;
   --border-strong: #d6cbb2;
   --text-primary: #2a2318;
   --text-secondary: #6e6656;
   --text-muted: #a69c88;
   --accent: #bf9c5a;
+  --accent-rgb: 191, 156, 90;
   --accent-light: #f1e9d4;
   --accent-dark: #99793c;
+  --accent-contrast: #ffffff;
   --sage: #8f9e7d;
   --sage-light: #dfe5d2;
   --espresso: #241f16;
@@ -23,6 +27,43 @@
   --danger-light: #f3e2db;
   --success: #6d8560;
   --success-light: #e3ebda;
+  --info: #4f6f8f;
+  --info-light: #e0e8f0;
+  --shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  --overlay: rgba(26, 23, 20, 0.55);
+  /* Sidebar */
+  --sidebar-bg: #241f16;
+  --sidebar-text: #f5f0e8;
+  --sidebar-muted: rgba(255, 255, 255, 0.4);
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+  --sidebar-hover: rgba(255, 255, 255, 0.05);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #15130f;
+  --bg-card: #1e1b16;
+  --bg-sunken: #29251e;
+  --bg-secondary: #221f19;
+  --bg-primary: #1e1b16;
+  --border: #353028;
+  --border-strong: #4a443a;
+  --text-primary: #f1ece2;
+  --text-secondary: #c2b9a8;
+  --text-muted: #8c8374;
+  --sage: #9fae8c;
+  --sage-light: #26301f;
+  --espresso: #0d0b08;
+  --danger: #e4907e;
+  --danger-light: #3a221c;
+  --success: #9dc08b;
+  --success-light: #1e2b1a;
+  --info: #8fb0d2;
+  --info-light: #1c2632;
+  --shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  --overlay: rgba(0, 0, 0, 0.65);
+  --sidebar-bg: #0f0d0a;
+  color-scheme: dark;
 }
 
 @layer base {
@@ -35,6 +76,7 @@
     font-size: 15px;
   }
   body {
+    transition: background-color 0.2s ease, color 0.2s ease;
     font-family: "Outfit", "DM Sans", sans-serif;
     background-color: var(--bg);
     color: var(--text-primary);
@@ -71,7 +113,7 @@
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 14px;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+    box-shadow: var(--shadow);
   }
   .card-sunken {
     background: var(--bg-sunken);
@@ -95,7 +137,7 @@
     white-space: nowrap;
   }
   .btn-primary:hover {
-    background: #2d2926;
+    opacity: 0.88;
     transform: translateY(-1px);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   }
@@ -172,7 +214,7 @@
     white-space: nowrap;
   }
   .btn-danger:hover {
-    background: #f0d4d4;
+    filter: brightness(0.96);
   }
 
   .input-field {
@@ -212,7 +254,7 @@
     border: 1px solid var(--border);
     border-radius: 14px;
     padding: 22px 24px;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+    box-shadow: var(--shadow);
   }
 }
 
@@ -500,4 +542,75 @@
   .input-field {
     font-size: 16px !important;
   } /* prevents iOS zoom */
+}
+
+/* ── Theme helpers ──────────────────────────── */
+.table-row-hover:hover {
+  background: var(--bg-sunken);
+}
+select.input-field {
+  appearance: auto;
+}
+input[type="date"].input-field,
+input[type="month"].input-field {
+  color-scheme: inherit;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.compact .card,
+.compact .stat-card {
+  border-radius: 10px;
+}
+.compact .page-content {
+  padding: 20px 24px !important;
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+@media print {
+  aside,
+  .no-print {
+    display: none !important;
+  }
+}
+@media (max-width: 640px) {
+  .form-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .form-grid > * {
+    grid-column: span 1 !important;
+  }
+}
+
+/* React writes inline styles in kebab-case, so target those forms on small screens */
+@media (max-width: 900px) {
+  [style*="grid-template-columns: 1fr 320px"],
+  [style*="grid-template-columns: 1fr 300px"],
+  .report-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+@media (max-width: 768px) {
+  [style*="padding: 28px 36px"] {
+    padding: 64px 14px 20px !important;
+  }
+  [style*="grid-template-columns: repeat(4, 1fr)"],
+  [style*="grid-template-columns: repeat(3, 1fr)"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
 }

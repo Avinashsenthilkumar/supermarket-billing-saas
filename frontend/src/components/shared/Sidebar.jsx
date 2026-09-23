@@ -1,7 +1,9 @@
-// src/components/shared/Sidebar.jsx
+// src/components/shared/Sidebar.jsx — role-aware navigation, colours follow Settings → Appearance
 import React, { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { useSettings } from "../../context/SettingsContext";
+import { ROLE_LABELS } from "../../utils/helpers";
 import {
   LayoutDashboard,
   Package,
@@ -16,83 +18,45 @@ import {
   ChevronRight,
   ScanLine,
   Shield,
+  Truck,
+  ClipboardList,
+  Wallet,
+  UserCog,
+  Settings as SettingsIcon,
+  Calculator,
 } from "lucide-react";
 
-const NAV = [
-  { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/billing", icon: ShoppingCart, label: "Billing" },
-  { to: "/stock", icon: Package, label: "Stock" },
-  { to: "/barcode", icon: ScanLine, label: "Barcodes" },
-  { to: "/transactions", icon: FileText, label: "History" },
-  { to: "/reports", icon: TrendingUp, label: "Reports" },
-
-  { to: "/customers", icon: Users, label: "Customers" },
+// roles: who can see the item (super admin sees everything)
+const SECTIONS = [
+  {
+    title: "Sell",
+    items: [
+      { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+      { to: "/billing", icon: ShoppingCart, label: "Billing" },
+      { to: "/transactions", icon: FileText, label: "Sales History" },
+      { to: "/customers", icon: Users, label: "Customers" },
+      { to: "/day-end", icon: Calculator, label: "Day Closing" },
+    ],
+  },
+  {
+    title: "Inventory",
+    items: [
+      { to: "/stock", icon: Package, label: "Stock", roles: ["owner", "manager"] },
+      { to: "/purchases", icon: ClipboardList, label: "Purchases", roles: ["owner", "manager"] },
+      { to: "/suppliers", icon: Truck, label: "Suppliers", roles: ["owner", "manager"] },
+      { to: "/barcode", icon: ScanLine, label: "Barcodes", roles: ["owner", "manager"] },
+    ],
+  },
+  {
+    title: "Business",
+    items: [
+      { to: "/reports", icon: TrendingUp, label: "Reports", roles: ["owner", "manager"] },
+      { to: "/expenses", icon: Wallet, label: "Expenses", roles: ["owner", "manager"] },
+      { to: "/staff", icon: UserCog, label: "Staff", roles: ["owner"] },
+      { to: "/settings", icon: SettingsIcon, label: "Settings" },
+    ],
+  },
 ];
-
-const S = {
-  sidebar: {
-    background: "#241f16",
-    display: "flex",
-    flexDirection: "column",
-    height: "100%",
-  },
-  logo: (col) => ({
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    padding: col ? "22px 12px" : "22px 20px",
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
-    justifyContent: col ? "center" : "flex-start",
-  }),
-  logoIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    background: "#bf9c5a",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  nav: {
-    flex: 1,
-    padding: "14px 8px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 1,
-    overflowY: "auto",
-  },
-  navLink: (active, col) => ({
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: col ? "10px 14px" : "10px 14px",
-    borderRadius: 8,
-    fontSize: 13.5,
-    fontWeight: active ? 500 : 400,
-    color: active ? "#f5f0e8" : "rgba(255,255,255,0.38)",
-    background: active ? "rgba(193,127,58,0.12)" : "transparent",
-    textDecoration: "none",
-    transition: "all 0.15s ease",
-    justifyContent: col ? "center" : "flex-start",
-    position: "relative",
-  }),
-  footer: {
-    padding: "10px 8px",
-    borderTop: "1px solid rgba(255,255,255,0.06)",
-  },
-  avatar: {
-    width: 26,
-    height: 26,
-    borderRadius: "50%",
-    background: "rgba(193,127,58,0.18)",
-    border: "1px solid rgba(193,127,58,0.3)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-};
 
 function NavItem({ to, icon: Icon, label, collapsed, onClick }) {
   const [hovered, setHovered] = useState(false);
@@ -100,18 +64,24 @@ function NavItem({ to, icon: Icon, label, collapsed, onClick }) {
     <NavLink
       to={to}
       onClick={onClick}
-      style={({ isActive }) => ({
-        ...S.navLink(isActive, collapsed),
-        ...(hovered && !S.navLink(false).color
-          ? {
-              color: "rgba(255,255,255,0.65)",
-              background: "rgba(255,255,255,0.05)",
-            }
-          : {}),
-      })}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       title={collapsed ? label : undefined}
+      style={({ isActive }) => ({
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "9px 14px",
+        borderRadius: 8,
+        fontSize: 13.5,
+        fontWeight: isActive ? 500 : 400,
+        color: isActive || hovered ? "var(--sidebar-text)" : "var(--sidebar-muted)",
+        background: isActive ? "rgba(var(--accent-rgb),0.16)" : hovered ? "var(--sidebar-hover)" : "transparent",
+        textDecoration: "none",
+        transition: "all 0.15s ease",
+        justifyContent: collapsed ? "center" : "flex-start",
+        position: "relative",
+      })}
     >
       {({ isActive }) => (
         <>
@@ -124,15 +94,12 @@ function NavItem({ to, icon: Icon, label, collapsed, onClick }) {
                 transform: "translateY(-50%)",
                 width: 3,
                 height: 16,
-                background: "#bf9c5a",
+                background: "var(--accent)",
                 borderRadius: "0 2px 2px 0",
               }}
             />
           )}
-          <Icon
-            size={15}
-            style={{ flexShrink: 0, color: isActive ? "#bf9c5a" : "inherit" }}
-          />
+          <Icon size={15} style={{ flexShrink: 0, color: isActive ? "var(--accent)" : "inherit" }} />
           {!collapsed && <span>{label}</span>}
         </>
       )}
@@ -141,111 +108,123 @@ function NavItem({ to, icon: Icon, label, collapsed, onClick }) {
 }
 
 function SidebarBody({ collapsed, onClose }) {
-  const { user, shop, logout, isSuperAdmin } = useAuth();
-  const shopName = shop?.name || "My Shop";
-  const shopTagline = "Point of Sale";
+  const { user, shop, logout, isSuperAdmin, can } = useAuth();
+  const { settings } = useSettings();
   const navigate = useNavigate();
   const [logoutHover, setLogoutHover] = useState(false);
+  const shopName = settings.businessName || shop?.name || "My Shop";
+
   const handleLogout = () => {
     logout();
     navigate("/login");
   };
+
   return (
-    <div style={S.sidebar}>
-      <div style={S.logo(collapsed)}>
-        <div style={S.logoIcon}>
-          <ShoppingCart size={14} color="#fff" />
-        </div>
+    <div style={{ background: "var(--sidebar-bg)", display: "flex", flexDirection: "column", height: "100%", borderRight: "1px solid var(--sidebar-border)" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: collapsed ? "20px 12px" : "20px 18px",
+          borderBottom: "1px solid var(--sidebar-border)",
+          justifyContent: collapsed ? "center" : "flex-start",
+        }}
+      >
+        {settings.logo ? (
+          <img src={settings.logo} alt="" style={{ width: 32, height: 32, borderRadius: 8, objectFit: "cover", flexShrink: 0, background: "#fff" }} />
+        ) : (
+          <div
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 8,
+              background: "var(--accent)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <ShoppingCart size={14} color="var(--accent-contrast)" />
+          </div>
+        )}
         {!collapsed && (
-          <div>
+          <div style={{ minWidth: 0 }}>
             <p
               style={{
                 fontFamily: "'Fraunces','Playfair Display',serif",
-                fontWeight: 400,
                 fontSize: 16,
-                color: "#f5f0e8",
-                lineHeight: 1.1,
+                color: "var(--sidebar-text)",
+                lineHeight: 1.15,
                 letterSpacing: "-0.02em",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
               }}
             >
               {shopName}
             </p>
-            <p
-              style={{
-                fontSize: 10,
-                color: "rgba(255,255,255,0.28)",
-                marginTop: 3,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-              }}
-            >
-              {shopTagline}
+            <p style={{ fontSize: 10.5, color: "var(--sidebar-muted)", marginTop: 3, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+              {settings.tagline || "Point of Sale"}
             </p>
           </div>
         )}
       </div>
 
-      <nav style={S.nav}>
-        {NAV.map((item) => (
-          <NavItem
-            key={item.to}
-            {...item}
-            collapsed={collapsed}
-            onClick={onClose}
-          />
-        ))}
+      <nav style={{ flex: 1, padding: "10px 8px", display: "flex", flexDirection: "column", gap: 1, overflowY: "auto" }}>
+        {SECTIONS.map((section) => {
+          const items = section.items.filter((i) => !i.roles || can(...i.roles));
+          if (!items.length) return null;
+          return (
+            <div key={section.title} style={{ marginBottom: 6 }}>
+              {!collapsed && (
+                <p style={{ fontSize: 10.5, color: "var(--sidebar-muted)", opacity: 0.7, padding: "10px 14px 4px", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  {section.title}
+                </p>
+              )}
+              {items.map((item) => (
+                <NavItem key={item.to} {...item} collapsed={collapsed} onClick={onClose} />
+              ))}
+            </div>
+          );
+        })}
         {isSuperAdmin && (
-          <NavItem
-            to="/admin"
-            icon={Shield}
-            label="Admin"
-            collapsed={collapsed}
-            onClick={onClose}
-          />
+          <div style={{ marginTop: 4 }}>
+            {!collapsed && (
+              <p style={{ fontSize: 10.5, color: "var(--sidebar-muted)", opacity: 0.7, padding: "10px 14px 4px", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                Platform
+              </p>
+            )}
+            <NavItem to="/admin" icon={Shield} label="Admin" collapsed={collapsed} onClick={onClose} />
+          </div>
         )}
       </nav>
 
-      <div style={S.footer}>
+      <div style={{ padding: "10px 8px", borderTop: "1px solid var(--sidebar-border)" }}>
         {!collapsed && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "8px 14px",
-              marginBottom: 4,
-            }}
-          >
-            <div style={S.avatar}>
-              <span
-                style={{ color: "#bf9c5a", fontSize: 10.5, fontWeight: 600 }}
-              >
-                {user?.username?.[0]?.toUpperCase()}
-              </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", marginBottom: 4 }}>
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                background: "rgba(var(--accent-rgb),0.2)",
+                border: "1px solid rgba(var(--accent-rgb),0.35)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <span style={{ color: "var(--accent)", fontSize: 11, fontWeight: 600 }}>{user?.username?.[0]?.toUpperCase()}</span>
             </div>
             <div style={{ minWidth: 0 }}>
-              <p
-                style={{
-                  color: "#f5f0e8",
-                  fontSize: 12.5,
-                  fontWeight: 500,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
+              <p style={{ color: "var(--sidebar-text)", fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {user?.username}
               </p>
-              <p
-                style={{
-                  color: "rgba(255,255,255,0.25)",
-                  fontSize: 11,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {user?.email}
+              <p style={{ color: "var(--sidebar-muted)", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {isSuperAdmin ? "Platform admin" : ROLE_LABELS[user?.role] || user?.role}
               </p>
             </div>
           </div>
@@ -253,6 +232,8 @@ function SidebarBody({ collapsed, onClose }) {
         <button
           onClick={handleLogout}
           title={collapsed ? "Sign out" : undefined}
+          onMouseEnter={() => setLogoutHover(true)}
+          onMouseLeave={() => setLogoutHover(false)}
           style={{
             width: "100%",
             display: "flex",
@@ -260,16 +241,13 @@ function SidebarBody({ collapsed, onClose }) {
             gap: 10,
             padding: "9px 14px",
             borderRadius: 8,
-            background: logoutHover ? "rgba(220,80,80,0.1)" : "transparent",
+            background: logoutHover ? "rgba(220,80,80,0.12)" : "transparent",
             border: "none",
-            color: logoutHover ? "#f87171" : "rgba(255,255,255,0.3)",
+            color: logoutHover ? "#f87171" : "var(--sidebar-muted)",
             cursor: "pointer",
             fontSize: 13.5,
-            transition: "all 0.15s ease",
             justifyContent: collapsed ? "center" : "flex-start",
           }}
-          onMouseEnter={() => setLogoutHover(true)}
-          onMouseLeave={() => setLogoutHover(false)}
         >
           <LogOut size={14} />
           {!collapsed && "Sign out"}
@@ -280,17 +258,22 @@ function SidebarBody({ collapsed, onClose }) {
 }
 
 export default function Sidebar() {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebarCollapsed") === "1");
   const [mobileOpen, setMobileOpen] = useState(false);
+  const toggle = () => {
+    localStorage.setItem("sidebarCollapsed", collapsed ? "0" : "1");
+    setCollapsed(!collapsed);
+  };
   return (
     <>
       <button
         onClick={() => setMobileOpen(true)}
-        className="md:hidden"
+        className="md:hidden no-print"
+        aria-label="Open menu"
         style={{
           position: "fixed",
-          top: 16,
-          left: 16,
+          top: 14,
+          left: 14,
           zIndex: 50,
           padding: 8,
           background: "var(--bg-card)",
@@ -304,65 +287,29 @@ export default function Sidebar() {
       </button>
 
       {mobileOpen && (
-        <div
-          className="md:hidden"
-          style={{ position: "fixed", inset: 0, zIndex: 40 }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              background: "rgba(26,22,15,0.55)",
-              backdropFilter: "blur(5px)",
-            }}
-            onClick={() => setMobileOpen(false)}
-          />
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: 210,
-            }}
-          >
+        <div className="md:hidden" style={{ position: "fixed", inset: 0, zIndex: 60 }}>
+          <div style={{ position: "absolute", inset: 0, background: "var(--overlay)", backdropFilter: "blur(5px)" }} onClick={() => setMobileOpen(false)} />
+          <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 230 }}>
             <button
               onClick={() => setMobileOpen(false)}
-              style={{
-                position: "absolute",
-                top: 14,
-                right: 14,
-                zIndex: 1,
-                color: "rgba(255,255,255,0.4)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-              }}
+              aria-label="Close menu"
+              style={{ position: "absolute", top: 14, right: 12, zIndex: 1, color: "var(--sidebar-muted)", background: "none", border: "none", cursor: "pointer" }}
             >
               <X size={17} />
             </button>
-            <SidebarBody
-              collapsed={false}
-              onClose={() => setMobileOpen(false)}
-            />
+            <SidebarBody collapsed={false} onClose={() => setMobileOpen(false)} />
           </div>
         </div>
       )}
 
       <aside
         className="hidden md:block"
-        style={{
-          width: collapsed ? 58 : 205,
-          flexShrink: 0,
-          height: "100vh",
-          position: "sticky",
-          top: 0,
-          transition: "width 0.24s ease",
-        }}
+        style={{ width: collapsed ? 58 : 212, flexShrink: 0, height: "100vh", position: "sticky", top: 0, transition: "width 0.24s ease" }}
       >
         <SidebarBody collapsed={collapsed} />
         <button
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={toggle}
+          aria-label="Toggle sidebar"
           style={{
             position: "absolute",
             right: -10,
@@ -378,7 +325,7 @@ export default function Sidebar() {
             cursor: "pointer",
             color: "var(--text-muted)",
             boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-            transition: "all 0.15s ease",
+            zIndex: 5,
           }}
         >
           {collapsed ? <ChevronRight size={10} /> : <ChevronLeft size={10} />}

@@ -1,0 +1,156 @@
+// models/tenant/sales.js — Customer, Bill, BillItem, HeldBill, SaleReturn, SaleReturnItem, CustomerPayment
+const { DataTypes } = require("sequelize");
+const { money, qty, jsonText } = require("./helpers");
+
+module.exports = (sequelize) => {
+  const Customer = sequelize.define(
+    "Customer",
+    {
+      id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+      name: { type: DataTypes.STRING(120), allowNull: false, defaultValue: "Customer" },
+      phone: { type: DataTypes.STRING(20), allowNull: true },
+      email: { type: DataTypes.STRING(120), allowNull: true },
+      address: { type: DataTypes.TEXT, allowNull: true },
+      gstNumber: { type: DataTypes.STRING(20), allowNull: true, field: "gst_number" },
+      loyaltyPoints: money({ field: "loyalty_points" }),
+      creditLimit: money({ field: "credit_limit" }),
+      balance: money(), // amount the customer OWES the shop (credit / udhaar)
+      totalSpent: money({ field: "total_spent" }),
+      totalBills: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, field: "total_bills" },
+      lastPurchaseAt: { type: DataTypes.DATE, allowNull: true, field: "last_purchase_at" },
+      notes: { type: DataTypes.TEXT, allowNull: true },
+      isActive: { type: DataTypes.BOOLEAN, defaultValue: true, field: "is_active" },
+    },
+    {
+      tableName: "customers",
+      indexes: [{ name: "uq_customers_phone", unique: true, fields: ["phone"] }],
+    },
+  );
+
+  const Bill = sequelize.define(
+    "Bill",
+    {
+      id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+      billNumber: { type: DataTypes.STRING(40), allowNull: false, field: "bill_number" },
+      customerId: { type: DataTypes.INTEGER, allowNull: true, field: "customer_id" },
+      customerName: { type: DataTypes.STRING(120), allowNull: true, field: "customer_name" },
+      customerPhone: { type: DataTypes.STRING(20), allowNull: true, field: "customer_phone" },
+      subtotal: money(), // Σ price × qty (before any discount)
+      itemDiscount: money({ field: "item_discount" }),
+      discountAmount: money({ field: "discount_amount" }), // bill-level discount
+      loyaltyDiscount: money({ field: "loyalty_discount" }),
+      taxableAmount: money({ field: "taxable_amount" }),
+      taxAmount: money({ field: "tax_amount" }),
+      cgst: money(),
+      sgst: money(),
+      roundOff: money({ field: "round_off" }),
+      totalAmount: money({ field: "total_amount" }),
+      paidAmount: money({ field: "paid_amount" }),
+      dueAmount: money({ field: "due_amount" }),
+      changeReturned: money({ field: "change_returned" }),
+      returnedAmount: money({ field: "returned_amount" }),
+      paymentMethod: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "cash", field: "payment_method" },
+      payments: jsonText("payments", []),
+      loyaltyEarned: money({ field: "loyalty_earned" }),
+      loyaltyRedeemed: money({ field: "loyalty_redeemed" }),
+      pricesIncludeTax: { type: DataTypes.BOOLEAN, defaultValue: true, field: "prices_include_tax" },
+      // completed | cancelled | partially_returned | returned
+      status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "completed" },
+      notes: { type: DataTypes.TEXT, allowNull: true },
+      cashierId: { type: DataTypes.INTEGER, allowNull: true, field: "cashier_id" },
+      cashierName: { type: DataTypes.STRING(60), allowNull: true, field: "cashier_name" },
+    },
+    {
+      tableName: "bills",
+      indexes: [
+        { name: "uq_bills_number", unique: true, fields: ["bill_number"] },
+        { name: "ix_bills_created", fields: ["createdAt"] },
+        { name: "ix_bills_customer", fields: ["customer_id"] },
+        { name: "ix_bills_phone", fields: ["customer_phone"] },
+      ],
+    },
+  );
+
+  const BillItem = sequelize.define(
+    "BillItem",
+    {
+      id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+      billId: { type: DataTypes.INTEGER, allowNull: false, field: "bill_id" },
+      productId: { type: DataTypes.INTEGER, allowNull: false, field: "product_id" },
+      productName: { type: DataTypes.STRING(180), allowNull: false, field: "product_name" },
+      productBarcode: { type: DataTypes.STRING(100), allowNull: true, field: "product_barcode" },
+      hsnCode: { type: DataTypes.STRING(20), allowNull: true, field: "hsn_code" },
+      unit: { type: DataTypes.STRING(12), allowNull: true },
+      mrp: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
+      unitPrice: money({ field: "unit_price" }),
+      costPrice: money({ field: "cost_price" }),
+      quantity: qty(),
+      discount: money(), // line discount (₹)
+      taxRate: { type: DataTypes.DECIMAL(5, 2), allowNull: false, defaultValue: 0, field: "tax_rate" },
+      taxableAmount: money({ field: "taxable_amount" }),
+      taxAmount: money({ field: "tax_amount" }),
+      totalPrice: money({ field: "total_price" }), // final line amount incl. tax
+      returnedQty: qty({ field: "returned_qty" }),
+    },
+    { tableName: "bill_items", indexes: [{ name: "ix_bill_items_bill", fields: ["bill_id"] }, { name: "ix_bill_items_product", fields: ["product_id"] }] },
+  );
+
+  const HeldBill = sequelize.define(
+    "HeldBill",
+    {
+      id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+      label: { type: DataTypes.STRING(80), allowNull: true },
+      cart: jsonText("cart", []),
+      meta: jsonText("meta", {}),
+      createdBy: { type: DataTypes.STRING(60), allowNull: true, field: "created_by" },
+    },
+    { tableName: "held_bills" },
+  );
+
+  const SaleReturn = sequelize.define(
+    "SaleReturn",
+    {
+      id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+      returnNumber: { type: DataTypes.STRING(40), allowNull: false, field: "return_number" },
+      billId: { type: DataTypes.INTEGER, allowNull: false, field: "bill_id" },
+      billNumber: { type: DataTypes.STRING(40), allowNull: true, field: "bill_number" },
+      customerId: { type: DataTypes.INTEGER, allowNull: true, field: "customer_id" },
+      totalAmount: money({ field: "total_amount" }),
+      refundMethod: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "cash", field: "refund_method" },
+      reason: { type: DataTypes.STRING(255), allowNull: true },
+      createdBy: { type: DataTypes.STRING(60), allowNull: true, field: "created_by" },
+    },
+    { tableName: "sale_returns", indexes: [{ name: "ix_returns_bill", fields: ["bill_id"] }] },
+  );
+
+  const SaleReturnItem = sequelize.define(
+    "SaleReturnItem",
+    {
+      id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+      returnId: { type: DataTypes.INTEGER, allowNull: false, field: "return_id" },
+      billItemId: { type: DataTypes.INTEGER, allowNull: false, field: "bill_item_id" },
+      productId: { type: DataTypes.INTEGER, allowNull: false, field: "product_id" },
+      productName: { type: DataTypes.STRING(180), allowNull: true, field: "product_name" },
+      quantity: qty(),
+      amount: money(),
+      restock: { type: DataTypes.BOOLEAN, defaultValue: true },
+    },
+    { tableName: "sale_return_items", updatedAt: false },
+  );
+
+  const CustomerPayment = sequelize.define(
+    "CustomerPayment",
+    {
+      id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+      customerId: { type: DataTypes.INTEGER, allowNull: false, field: "customer_id" },
+      amount: money(),
+      method: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "cash" },
+      reference: { type: DataTypes.STRING(80), allowNull: true },
+      notes: { type: DataTypes.STRING(255), allowNull: true },
+      createdBy: { type: DataTypes.STRING(60), allowNull: true, field: "created_by" },
+    },
+    { tableName: "customer_payments", updatedAt: false },
+  );
+
+  return { Customer, Bill, BillItem, HeldBill, SaleReturn, SaleReturnItem, CustomerPayment };
+};

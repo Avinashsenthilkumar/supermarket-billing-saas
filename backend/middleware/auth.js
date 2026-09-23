@@ -1,73 +1,84 @@
 // middleware/auth.js
-const jwt = require('jsonwebtoken');
-const { User, Shop } = require('../models');
+const jwt = require("jsonwebtoken");
+const { User, Shop } = require("../models/master");
+const { getTenant } = require("../tenant/tenantManager");
 
-// Verify JWT, attach user + shop to request
+const JWT_SECRET = () => {
+  const s = process.env.JWT_SECRET;
+  if (!s) throw new Error("JWT_SECRET is not configured");
+  return s;
+};
+
+const signToken = (user) =>
+  jwt.sign({ id: user.id, shopId: user.shopId }, JWT_SECRET(), {
+    expiresIn: process.env.JWT_EXPIRES_IN || "7d",
+  });
+
+const deny = (res, status, message, code) => res.status(status).json({ success: false, message, ...(code ? { code } : {}) });
+
+const isSuperAdminUser = (user) =>
+  !!user &&
+  (user.isSuperAdmin ||
+    (process.env.SUPER_ADMIN_EMAIL && user.email === String(process.env.SUPER_ADMIN_EMAIL).toLowerCase()));
+
+const subscriptionActive = (shop) => {
+  if (!shop.subscriptionEnds) return true; // no end date = lifetime
+  return new Date(shop.subscriptionEnds).getTime() >= Date.now();
+};
+
+/**
+ * Verifies the JWT, loads the user + shop from the MASTER db and attaches the
+ * shop's private database handle as `req.db` (models) / `req.tenant`.
+ */
 const protect = async (req, res, next) => {
+  let decoded;
   try {
-    let token;
+    const header = req.headers.authorization || "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+    if (!token) return deny(res, 401, "Not authorized, no token");
+    decoded = jwt.verify(token, JWT_SECRET());
+  } catch {
+    return deny(res, 401, "Session expired, please login again");
+  }
 
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-      token = req.headers.authorization.split(' ')[1];
-    }
+  try {
+    const user = await User.findByPk(decoded.id, { include: [{ model: Shop, as: "shop" }] });
+    if (!user || !user.isActive) return deny(res, 401, "User not found or inactive");
+    if (!user.shop) return deny(res, 403, "Shop not found");
 
-    if (!token) {
-      return res.status(401).json({ success: false, message: 'Not authorized, no token' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findByPk(decoded.id, {
-      attributes: { exclude: ['password'] },
-      include: [{ model: Shop, as: 'shop' }],
-    });
-
-    if (!user || !user.isActive) {
-      return res.status(401).json({ success: false, message: 'User not found or inactive' });
-    }
-
-    if (!user.shop || !user.shop.isActive) {
-      return res.status(403).json({ success: false, message: 'Shop is inactive. Contact support.' });
-    }
+    const superAdmin = isSuperAdminUser(user);
+    if (!user.shop.isActive && !superAdmin) return deny(res, 403, "Your shop is inactive. Contact support.", "SHOP_INACTIVE");
 
     req.user = user;
-    req.shopId = user.shopId; // convenience shortcut used by controllers
+    req.shop = user.shop;
+    req.shopId = user.shopId;
+    req.isSuperAdmin = superAdmin;
+    req.subscriptionActive = superAdmin || subscriptionActive(user.shop);
+
+    const tenant = await getTenant(user.shop);
+    req.tenant = tenant;
+    req.db = tenant.models;
     next();
-  } catch (error) {
-    return res.status(401).json({ success: false, message: 'Not authorized, invalid token' });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Optional: block access when the subscription has expired.
-// Free trial = subscriptionEnds in the future. Apply this only to routes
-// you want to gate (e.g. billing). Leave read-only routes ungated if you like.
+// Block every write (POST/PUT/PATCH/DELETE) when the plan/trial has expired.
 const requireActiveSubscription = (req, res, next) => {
-  const shop = req.user.shop;
-  const ends = shop.subscriptionEnds ? new Date(shop.subscriptionEnds) : null;
-  if (!ends || ends.getTime() < Date.now()) {
-    return res.status(402).json({
-      success: false,
-      message: 'Your subscription/trial has expired. Please upgrade to continue.',
-      code: 'SUBSCRIPTION_EXPIRED',
-    });
-  }
-  next();
+  if (req.method === "GET" || req.subscriptionActive) return next();
+  return deny(res, 402, "Your subscription / trial has expired. Please renew to continue.", "SUBSCRIPTION_EXPIRED");
 };
 
-// Only shop owners can perform certain actions (e.g. manage staff)
-const requireOwner = (req, res, next) => {
-  if (req.user.role !== 'owner') {
-    return res.status(403).json({ success: false, message: 'Owner access required' });
-  }
-  next();
+// allow('owner','manager') → only these shop roles may continue
+const allow = (...roles) => (req, res, next) => {
+  if (req.isSuperAdmin || roles.includes(req.user.role)) return next();
+  return deny(res, 403, "You don't have permission to do this");
 };
 
-// Super-admin: identified by email (set SUPER_ADMIN_EMAIL in env)
-const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || 'admin@supermarket.com';
 const requireSuperAdmin = (req, res, next) => {
-  if (!req.user || req.user.email !== SUPER_ADMIN_EMAIL) {
-    return res.status(403).json({ success: false, message: 'Admin access only' });
-  }
+  if (!req.isSuperAdmin) return deny(res, 403, "Platform admin access only");
   next();
 };
 
-module.exports = { protect, requireActiveSubscription, requireOwner, requireSuperAdmin };
+module.exports = { protect, requireActiveSubscription, allow, requireSuperAdmin, signToken, isSuperAdminUser, subscriptionActive };

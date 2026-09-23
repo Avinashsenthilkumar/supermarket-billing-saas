@@ -1,7 +1,8 @@
 // src/components/stock/Stock.jsx
 import React, { useState, useEffect, useCallback } from "react";
-import { productAPI, reportAPI } from "../../services/api";
-import { formatCurrency, getErrorMessage, debounce } from "../../utils/helpers";
+import { productAPI, reportAPI, supplierAPI } from "../../services/api";
+import { formatCurrency, formatQty, formatDateTime, getErrorMessage, debounce, num, getStockBadge } from "../../utils/helpers";
+import { useSettings } from "../../context/SettingsContext";
 import {
   Spinner,
   Modal,
@@ -10,6 +11,13 @@ import {
   ConfirmDialog,
   SearchInput,
   SectionHeader,
+  Grid,
+  Field,
+  Table,
+  Th,
+  Td,
+  Pagination,
+  MiniStat,
 } from "../shared/UI";
 import BarcodeScanner from "../shared/BarcodeScanner";
 import toast from "react-hot-toast";
@@ -21,51 +29,43 @@ import {
   Scan,
   Check,
   X,
-  ChevronLeft,
-  ChevronRight,
   Upload,
   FileSpreadsheet,
   AlertCircle,
   CheckCircle2,
   Printer,
   Download,
+  History,
+  Sliders,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 const EMPTY = {
   name: "",
   barcode: "",
   serialNumber: "",
   mrp: "",
   price: "",
+  costPrice: "",
   quantity: "",
   category: "",
+  brand: "",
+  unit: "pcs",
+  allowDecimal: false,
+  taxRate: "",
+  hsnCode: "",
+  reorderLevel: "",
   netQty: "",
   description: "",
   expiryDate: "",
+  batchNo: "",
+  location: "",
 };
+const DECIMAL_UNITS = ["kg", "g", "l", "ml", "mtr"];
+const GST_RATES = [0, 5, 12, 18, 28];
 
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-const stockBadge = (qty) => {
-  if (qty === 0)
-    return {
-      label: "Out of stock",
-      bg: "var(--danger-light)",
-      color: "var(--danger)",
-    };
-  if (qty < 10)
-    return {
-      label: "Low stock",
-      bg: "rgba(193,127,58,0.10)",
-      color: "var(--accent-dark)",
-    };
-  return {
-    label: "In stock",
-    bg: "var(--success-light)",
-    color: "var(--success)",
-  };
-};
-
+const stockBadge = (qty, reorder = 10) => getStockBadge(qty, reorder);
 const expiryStatus = (dateStr) => {
   if (!dateStr) return null;
   const today = new Date();
@@ -82,7 +82,7 @@ const expiryStatus = (dateStr) => {
   if (diffDays <= 30)
     return {
       label: `${diffDays}d left`,
-      bg: "rgba(193,127,58,0.10)",
+      bg: "rgba(var(--accent-rgb),0.10)",
       color: "var(--accent-dark)",
       days: diffDays,
     };
@@ -99,60 +99,82 @@ const expiryStatus = (dateStr) => {
 };
 
 function ProductModal({ isOpen, onClose, product, onSaved }) {
+  const { settings } = useSettings();
   const [form, setForm] = useState(EMPTY);
   const [loading, setLoading] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const isEdit = !!product;
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   useEffect(() => {
-    setForm(
-      product
-        ? {
-            name: product.name || "",
-            barcode: product.barcode || "",
-            serialNumber: product.serialNumber || "",
-            mrp: product.mrp ? String(product.mrp) : "",
-            price: product.price || "",
-            quantity:
-              product.quantity !== undefined && product.quantity !== null
-                ? String(product.quantity)
-                : "0",
-            category: product.category || "",
-            description:
-              product.description && !product.description.startsWith("Net Qty:")
-                ? product.description
-                : "",
-            netQty:
-              product.description && product.description.startsWith("Net Qty:")
-                ? product.description.replace("Net Qty:", "").trim()
-                : "",
-            expiryDate: product.expiryDate
-              ? product.expiryDate.slice(0, 10)
-              : "",
-          }
-        : EMPTY,
-    );
-  }, [product, isOpen]);
+    if (!isOpen) return;
+    productAPI
+      .getCategories()
+      .then((r) => setCategories(r.data.data.categories))
+      .catch(() => {});
+    supplierAPI
+      .getAll({ limit: 1000 })
+      .then((r) => setSuppliers(r.data.data.suppliers))
+      .catch(() => {});
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!product) {
+      setForm({ ...EMPTY, taxRate: settings.defaultTaxRate ?? 0, reorderLevel: settings.lowStockThreshold ?? 10 });
+      return;
+    }
+    const legacyNet = product.description && product.description.startsWith("Net Qty:");
+    setForm({
+      ...EMPTY,
+      name: product.name || "",
+      barcode: product.barcode || "",
+      serialNumber: product.serialNumber || "",
+      mrp: product.mrp ?? "",
+      price: product.price ?? "",
+      costPrice: product.costPrice ?? "",
+      quantity: product.quantity ?? 0,
+      category: product.category || "",
+      brand: product.brand || "",
+      unit: product.unit || "pcs",
+      allowDecimal: !!product.allowDecimal,
+      taxRate: product.taxRate ?? 0,
+      hsnCode: product.hsnCode || "",
+      reorderLevel: product.reorderLevel ?? 10,
+      netQty: product.netQty || (legacyNet ? product.description.replace("Net Qty:", "").trim() : ""),
+      description: legacyNet ? "" : product.description || "",
+      expiryDate: product.expiryDate ? String(product.expiryDate).slice(0, 10) : "",
+      batchNo: product.batchNo || "",
+      location: product.location || "",
+      supplierId: product.supplierId || "",
+    });
+  }, [product, isOpen, settings.defaultTaxRate, settings.lowStockThreshold]);
+
+  const margin = num(form.price) > 0 && num(form.costPrice) > 0 ? ((num(form.price) - num(form.costPrice)) / num(form.price)) * 100 : null;
 
   const handleSubmit = async () => {
-    if (!form.name || !form.price)
-      return toast.error("Name and price required");
+    if (!form.name.trim()) return toast.error("Product name is required");
+    if (form.price === "" || num(form.price) < 0) return toast.error("Selling price is required");
+    if (form.mrp !== "" && num(form.mrp) > 0 && num(form.price) > num(form.mrp)) {
+      if (!window.confirm("Selling price is higher than MRP. Save anyway?")) return;
+    }
     setLoading(true);
     try {
-      const { netQty, ...rest } = form;
       const payload = {
-        ...rest,
-        mrp: form.mrp ? parseFloat(form.mrp) : null,
-        price: parseFloat(form.price),
-        quantity: form.quantity !== "" ? parseInt(form.quantity) : 0,
-        serialNumber: form.serialNumber || null,
-        barcode: form.barcode || null,
-        description: netQty ? `Net Qty: ${netQty}` : form.description,
+        ...form,
+        mrp: form.mrp === "" ? null : num(form.mrp),
+        price: num(form.price),
+        costPrice: num(form.costPrice),
+        taxRate: num(form.taxRate),
+        reorderLevel: num(form.reorderLevel, 10),
+        quantity: form.quantity === "" ? 0 : num(form.quantity),
+        barcode: form.barcode.trim() || null,
+        serialNumber: form.serialNumber.trim() || null,
         expiryDate: form.expiryDate || null,
+        supplierId: form.supplierId || null,
       };
-      isEdit
-        ? await productAPI.update(product.id, payload)
-        : await productAPI.create(payload);
+      isEdit ? await productAPI.update(product.id, payload) : await productAPI.create(payload);
       toast.success(isEdit ? "Product updated" : "Product created");
       onSaved();
       onClose();
@@ -163,146 +185,265 @@ function ProductModal({ isOpen, onClose, product, onSaved }) {
     }
   };
 
+  const input = (label, key, props = {}, span = 1) => (
+    <Field label={label} span={span} required={props.required} hint={props.hint}>
+      <input
+        className="input-field"
+        value={form[key] ?? ""}
+        onChange={(e) => set(key, e.target.value)}
+        type={props.type || "text"}
+        min={props.type === "number" ? 0 : undefined}
+        step={props.type === "number" ? "any" : undefined}
+        placeholder={props.placeholder}
+        list={props.list}
+        style={props.mono ? { fontFamily: "JetBrains Mono, monospace" } : undefined}
+        autoFocus={props.autoFocus}
+      />
+    </Field>
+  );
+
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title={isEdit ? "Edit Product" : "New Product"}
-      maxWidth={520}
-    >
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div
-          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
-        >
-          <FormField label="Product Name" required>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => set("name", e.target.value)}
+    <Modal isOpen={isOpen} onClose={onClose} title={isEdit ? "Edit Product" : "New Product"} maxWidth={720}>
+      <datalist id="cat-list">
+        {categories.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <Grid cols={3}>
+          {input("Product name", "name", { required: true, placeholder: "e.g. Ponni Rice 5kg", autoFocus: true }, 2)}
+          {input("Brand", "brand", { placeholder: "e.g. Aashirvaad" })}
+          {input("Category", "category", { list: "cat-list", placeholder: "Type or pick" })}
+          {input("Barcode", "barcode", { mono: true, placeholder: "Scan or type" })}
+          {input("SKU / Serial", "serialNumber", { mono: true, placeholder: "Optional" })}
+        </Grid>
+
+        <Grid cols={4}>
+          {input("MRP", "mrp", { type: "number" })}
+          {input("Selling price", "price", { type: "number", required: true })}
+          {input("Cost price", "costPrice", { type: "number", hint: margin !== null ? `Margin ${margin.toFixed(1)}%` : "For profit reports" })}
+          <Field label={`${settings.taxLabel || "GST"} %`}>
+            <select className="input-field" value={form.taxRate} onChange={(e) => set("taxRate", e.target.value)}>
+              {[...new Set([...GST_RATES, num(form.taxRate)])].map((r) => (
+                <option key={r} value={r}>
+                  {r}%
+                </option>
+              ))}
+            </select>
+          </Field>
+        </Grid>
+
+        <Grid cols={4}>
+          <Field label="Unit">
+            <select
               className="input-field"
-              placeholder="e.g. Basmati Rice 1kg"
-            />
-          </FormField>
-          <FormField label="Category">
-            <input
-              type="text"
-              value={form.category}
-              onChange={(e) => set("category", e.target.value)}
-              className="input-field"
-              placeholder="e.g. Grains"
-            />
-          </FormField>
-        </div>
-        <div
-          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
-        >
-          <FormField label="Barcode">
-            <input
-              type="text"
-              value={form.barcode}
-              onChange={(e) => set("barcode", e.target.value)}
-              className="input-field"
-              style={{ fontFamily: "JetBrains Mono, monospace" }}
-              placeholder="Scan or type"
-            />
-          </FormField>
-          <FormField label="Serial Number">
-            <input
-              type="text"
-              value={form.serialNumber}
-              onChange={(e) => set("serialNumber", e.target.value)}
-              className="input-field"
-              style={{ fontFamily: "JetBrains Mono, monospace" }}
-              placeholder="Optional"
-            />
-          </FormField>
-        </div>
-        <div
-          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
-        >
-          <FormField label="MRP (₹)">
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.mrp}
-              onChange={(e) => set("mrp", e.target.value)}
-              className="input-field"
-              placeholder="0.00"
-            />
-          </FormField>
-          <FormField label="Price (₹)" required>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.price}
-              onChange={(e) => set("price", e.target.value)}
-              className="input-field"
-              placeholder="0.00"
-            />
-          </FormField>
-          <FormField label="Quantity">
-            <input
-              type="number"
-              min="0"
-              value={form.quantity}
-              onChange={(e) => set("quantity", e.target.value)}
-              className="input-field"
-              placeholder="0"
-            />
-          </FormField>
-        </div>
-        <FormField label="Expiry Date">
-          <input
-            type="date"
-            value={form.expiryDate}
-            onChange={(e) => set("expiryDate", e.target.value)}
-            className="input-field"
-          />
-        </FormField>
-        <FormField label="Net Quantity">
-          <input
-            type="text"
-            value={form.netQty}
-            onChange={(e) => set("netQty", e.target.value)}
-            className="input-field"
-            placeholder="e.g. 1kg, 500ml, 12pcs"
-          />
-        </FormField>
-        <FormField label="Description">
-          <textarea
-            value={form.description}
-            onChange={(e) => set("description", e.target.value)}
-            className="input-field"
-            rows={2}
-            placeholder="Optional notes"
-            style={{ resize: "none" }}
-          />
-        </FormField>
+              value={form.unit}
+              onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value, allowDecimal: DECIMAL_UNITS.includes(e.target.value) }))}
+            >
+              {[...new Set([...(settings.units || ["pcs", "kg"]), form.unit])].map((u) => (
+                <option key={u} value={u}>
+                  {u}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {input(isEdit ? "Stock (adjusts)" : "Opening stock", "quantity", { type: "number" })}
+          {input("Reorder level", "reorderLevel", { type: "number", hint: "Low-stock alert" })}
+          {input("HSN code", "hsnCode", { mono: true })}
+        </Grid>
+        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: "var(--text-secondary)", marginTop: -6 }}>
+          <input type="checkbox" checked={!!form.allowDecimal} onChange={(e) => set("allowDecimal", e.target.checked)} style={{ accentColor: "var(--accent)" }} />
+          Sold loose — allow decimal quantity (e.g. 1.250 kg)
+        </label>
+
+        <Grid cols={4}>
+          {input("Net quantity", "netQty", { placeholder: "1kg / 500ml" })}
+          {input("Expiry date", "expiryDate", { type: "date" })}
+          {input("Batch no.", "batchNo")}
+          {input("Rack / shelf", "location")}
+        </Grid>
+
+        <Grid cols={2}>
+          <Field label="Supplier">
+            <select className="input-field" value={form.supplierId || ""} onChange={(e) => set("supplierId", e.target.value)}>
+              <option value="">—</option>
+              {suppliers.map((sp) => (
+                <option key={sp.id} value={sp.id}>
+                  {sp.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {input("Description", "description", { placeholder: "Optional notes" })}
+        </Grid>
+
         <div style={{ display: "flex", gap: 10, paddingTop: 4 }}>
-          <button
-            onClick={onClose}
-            className="btn-ghost"
-            style={{ flex: 1, justifyContent: "center" }}
-          >
+          <button onClick={onClose} className="btn-ghost" style={{ flex: 1, justifyContent: "center" }}>
             Cancel
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
-            className="btn-primary"
-            style={{ flex: 1, justifyContent: "center" }}
-          >
-            {loading ? (
-              <Spinner size={13} color="#f5f0e8" />
-            ) : (
-              <Check size={13} />
-            )}
+          <button onClick={handleSubmit} disabled={loading} className="btn-primary" style={{ flex: 1, justifyContent: "center" }}>
+            {loading ? <Spinner size={13} color="var(--bg)" /> : <Check size={13} />}
             {isEdit ? "Save" : "Create"}
           </button>
         </div>
       </div>
+    </Modal>
+  );
+}
+
+const REASONS = ["Damaged", "Expired", "Theft / missing", "Stock count correction", "Free sample / gift", "Returned to supplier", "Other"];
+
+function AdjustModal({ product, onClose, onSaved }) {
+  const [op, setOp] = useState("subtract");
+  const [qty, setQty] = useState("");
+  const [reason, setReason] = useState(REASONS[0]);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setOp("subtract");
+    setQty("");
+    setNote("");
+    setReason(REASONS[0]);
+  }, [product]);
+  if (!product) return null;
+  const current = num(product.quantity);
+  const after = op === "set" ? num(qty) : op === "add" ? current + num(qty) : current - num(qty);
+  const save = async () => {
+    if (qty === "" || num(qty) < 0) return toast.error("Enter quantity");
+    setBusy(true);
+    try {
+      await productAPI.updateStock(product.id, { quantity: num(qty), operation: op, reason, note });
+      toast.success("Stock adjusted");
+      onSaved();
+      onClose();
+    } catch (e) {
+      toast.error(getErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal isOpen onClose={onClose} title={`Adjust stock — ${product.name}`} maxWidth={440}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {[
+          ["subtract", "Remove"],
+          ["add", "Add"],
+          ["set", "Set exact"],
+        ].map(([v, l]) => (
+          <button key={v} className={op === v ? "btn-primary" : "btn-ghost"} style={{ flex: 1, justifyContent: "center" }} onClick={() => setOp(v)}>
+            {l}
+          </button>
+        ))}
+      </div>
+      <Grid cols={2}>
+        <Field label={`Quantity (${product.unit || "pcs"})`}>
+          <input className="input-field" type="number" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} autoFocus />
+        </Field>
+        <Field label="Reason">
+          <select className="input-field" value={reason} onChange={(e) => setReason(e.target.value)}>
+            {REASONS.map((r) => (
+              <option key={r}>{r}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Note" span={2}>
+          <input className="input-field" value={note} onChange={(e) => setNote(e.target.value)} />
+        </Field>
+      </Grid>
+      <p style={{ fontSize: 13, marginTop: 12, color: "var(--text-secondary)" }}>
+        {formatQty(current, product.unit)} → <b style={{ color: after < 0 ? "var(--danger)" : "var(--text-primary)" }}>{formatQty(after, product.unit)}</b>
+      </p>
+      <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+        <button className="btn-ghost" style={{ flex: 1, justifyContent: "center" }} onClick={onClose}>
+          Cancel
+        </button>
+        <button className="btn-primary" style={{ flex: 1, justifyContent: "center" }} onClick={save} disabled={busy || after < 0}>
+          {busy && <Spinner size={13} color="var(--bg)" />} Save
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+const MOVE_LABELS = {
+  sale: "Sale",
+  sale_cancel: "Bill cancelled",
+  return: "Customer return",
+  purchase: "Purchase",
+  purchase_cancel: "Purchase cancelled",
+  adjustment: "Adjustment",
+  opening: "Opening stock",
+  import: "Bulk import",
+  scan: "Scan add",
+};
+
+function MovementsModal({ product, onClose }) {
+  const [rows, setRows] = useState([]);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!product) return;
+    setLoading(true);
+    productAPI
+      .getMovements(product.id, { page, limit: 30 })
+      .then((r) => {
+        setRows(r.data.data.movements);
+        setPages(r.data.data.pages);
+      })
+      .catch((e) => toast.error(getErrorMessage(e)))
+      .finally(() => setLoading(false));
+  }, [product, page]);
+  useEffect(() => setPage(1), [product]);
+  if (!product) return null;
+  return (
+    <Modal isOpen onClose={onClose} title={`Stock history — ${product.name}`} maxWidth={680}>
+      {loading ? (
+        <div style={{ padding: 30, display: "flex", justifyContent: "center" }}>
+          <Spinner />
+        </div>
+      ) : rows.length === 0 ? (
+        <p style={{ fontSize: 13, color: "var(--text-muted)", textAlign: "center", padding: 20 }}>No movements recorded yet</p>
+      ) : (
+        <>
+          <Table minWidth={540}>
+            <thead>
+              <tr>
+                <Th>Date</Th>
+                <Th>Type</Th>
+                <Th>Reference</Th>
+                <Th align="right">Change</Th>
+                <Th align="right">Balance</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((m) => (
+                <tr key={m.id}>
+                  <Td muted style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>
+                    {formatDateTime(m.createdAt)}
+                  </Td>
+                  <Td>
+                    {MOVE_LABELS[m.type] || m.type}
+                    {m.note && <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{m.note}</div>}
+                  </Td>
+                  <Td mono muted>
+                    {m.reference || "—"}
+                    {m.userName && <div style={{ fontSize: 11 }}>{m.userName}</div>}
+                  </Td>
+                  <Td align="right" mono style={{ color: num(m.quantity) < 0 ? "var(--danger)" : "var(--success)" }}>
+                    {num(m.quantity) > 0 ? "+" : ""}
+                    {formatQty(m.quantity)}
+                  </Td>
+                  <Td align="right" mono>
+                    {formatQty(m.balanceAfter)}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+          <Pagination page={page} pages={pages} onChange={setPage} />
+        </>
+      )}
     </Modal>
   );
 }
@@ -325,8 +466,8 @@ function ScanForm({ scanned, isNew, onSubmit, onReset, loading }) {
         style={{
           padding: "12px 14px",
           borderRadius: 10,
-          background: isNew ? "rgba(193,127,58,0.08)" : "var(--success-light)",
-          border: `1px solid ${isNew ? "rgba(193,127,58,0.2)" : "rgba(58,122,90,0.2)"}`,
+          background: isNew ? "rgba(var(--accent-rgb),0.08)" : "var(--success-light)",
+          border: `1px solid ${isNew ? "rgba(var(--accent-rgb),0.2)" : "rgba(58,122,90,0.2)"}`,
         }}
       >
         <p
@@ -448,7 +589,7 @@ function ScanForm({ scanned, isNew, onSubmit, onReset, loading }) {
           style={{ flex: 1, justifyContent: "center" }}
         >
           {loading ? (
-            <Spinner size={13} color="#f5f0e8" />
+            <Spinner size={13} color="var(--bg)" />
           ) : (
             <Check size={13} />
           )}
@@ -599,6 +740,35 @@ function ScanModal({ isOpen, onClose, onScanned }) {
   );
 }
 
+// Column names are matched loosely: "Cost Price", "cost_price", "costprice" all work
+const mapImportRow = (r) => {
+  const v = (...keys) => {
+    for (const k of keys) if (r[k] !== undefined && r[k] !== null && String(r[k]).trim() !== "") return String(r[k]).trim();
+    return "";
+  };
+  const row = {
+    name: v("name", "productname", "product", "item"),
+    price: v("price", "sellingprice", "salesprice", "rate"),
+    mrp: v("mrp"),
+    costPrice: v("costprice", "cost", "purchaseprice"),
+    quantity: v("quantity", "qty", "stock") || "0",
+    category: v("category"),
+    brand: v("brand"),
+    unit: v("unit", "uom"),
+    taxRate: v("taxrate", "gst", "gstrate", "tax"),
+    hsnCode: v("hsncode", "hsn"),
+    barcode: v("barcode", "ean", "upc"),
+    netQty: v("netqty", "netquantity", "size"),
+    reorderLevel: v("reorderlevel", "minstock"),
+    expiryDate: v("expirydate", "expiry"),
+    description: v("description", "desc"),
+  };
+  Object.keys(row).forEach((k) => {
+    if (row[k] === "" && k !== "name" && k !== "price") delete row[k];
+  });
+  return row;
+};
+
 function BulkImportModal({ isOpen, onClose, onImported }) {
   const [step, setStep] = useState("upload");
   const [rows, setRows] = useState([]);
@@ -635,16 +805,7 @@ function BulkImportModal({ isOpen, onClose, onImported }) {
           })
           .filter((r) => r.name && r.name.trim());
         setRows(
-          parsed.map((r) => ({
-            name: r.name || "",
-            price: r.price || "",
-            mrp: r.mrp || "",
-            quantity: r.quantity || r.qty || "0",
-            category: r.category || "",
-            barcode: r.barcode || "",
-            expiryDate: r.expirydate || r.expiry || "",
-            description: r.description || r.desc || "",
-          })),
+          parsed.map(mapImportRow),
         );
         setStep("preview");
       };
@@ -669,19 +830,7 @@ function BulkImportModal({ isOpen, onClose, onImported }) {
           };
           setRows(
             data
-              .map((r) => {
-                const n = normalize(r);
-                return {
-                  name: String(n.name || ""),
-                  price: String(n.price || ""),
-                  mrp: String(n.mrp || ""),
-                  quantity: String(n.quantity || n.qty || "0"),
-                  category: String(n.category || ""),
-                  barcode: String(n.barcode || ""),
-                  expiryDate: String(n.expirydate || n.expiry || ""),
-                  description: String(n.description || n.desc || ""),
-                };
-              })
+              .map((r) => mapImportRow(normalize(r)))
               .filter((r) => r.name && r.name.trim()),
           );
           setStep("preview");
@@ -711,7 +860,7 @@ function BulkImportModal({ isOpen, onClose, onImported }) {
 
   const downloadTemplate = () => {
     const csv =
-      "name,price,mrp,quantity,category,barcode,expiryDate,description\nBarcode Rice 1kg,120,150,50,Grains,8901234567890,2026-12-31,Premium quality\nSunflower Oil 1L,180,200,30,Oils,8901234567891,2026-06-30,";
+      "name,price,mrp,costPrice,quantity,unit,category,brand,taxRate,hsnCode,barcode,expiryDate,description\nPonni Rice 5kg,340,380,300,50,pcs,Rice & Grains,Sri Lakshmi,5,1006,8901234567890,2027-03-31,Premium\nTomato,40,,28,25,kg,Fruits & Vegetables,,0,0702,,,Loose\nSunflower Oil 1L,145,160,128,30,pcs,Oil & Ghee,Gold Winner,5,1512,8901234567891,2026-12-31,";
     const a = document.createElement("a");
     a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
     a.download = "supermart-import-template.csv";
@@ -748,7 +897,7 @@ function BulkImportModal({ isOpen, onClose, onImported }) {
               padding: "40px 20px",
               textAlign: "center",
               background: dragOver
-                ? "rgba(193,127,58,0.06)"
+                ? "rgba(var(--accent-rgb),0.06)"
                 : "var(--bg-secondary)",
               cursor: "pointer",
               transition: "all 0.2s",
@@ -804,7 +953,12 @@ function BulkImportModal({ isOpen, onClose, onImported }) {
                 { col: "name", req: true },
                 { col: "price", req: true },
                 { col: "mrp", req: false },
+                { col: "costPrice", req: false },
                 { col: "quantity", req: false },
+                { col: "unit", req: false },
+                { col: "taxRate", req: false },
+                { col: "hsnCode", req: false },
+                { col: "brand", req: false },
                 { col: "category", req: false },
                 { col: "barcode", req: false },
                 { col: "expiryDate", req: false },
@@ -818,10 +972,10 @@ function BulkImportModal({ isOpen, onClose, onImported }) {
                     fontSize: 12,
                     fontFamily: "monospace",
                     background: req
-                      ? "rgba(193,127,58,0.12)"
+                      ? "rgba(var(--accent-rgb),0.12)"
                       : "var(--bg-primary)",
                     color: req ? "var(--accent-dark)" : "var(--text-muted)",
-                    border: `1px solid ${req ? "rgba(193,127,58,0.25)" : "var(--border)"}`,
+                    border: `1px solid ${req ? "rgba(var(--accent-rgb),0.25)" : "var(--border)"}`,
                   }}
                 >
                   {col}
@@ -1009,7 +1163,7 @@ function BulkImportModal({ isOpen, onClose, onImported }) {
               style={{ flex: 2, justifyContent: "center" }}
             >
               {loading ? (
-                <Spinner size={13} color="#f5f0e8" />
+                <Spinner size={13} color="var(--bg)" />
               ) : (
                 <Upload size={13} />
               )}{" "}
@@ -1058,7 +1212,7 @@ function BulkImportModal({ isOpen, onClose, onImported }) {
                 label: "Updated",
                 value: result.updated,
                 color: "var(--accent-dark)",
-                bg: "rgba(193,127,58,0.08)",
+                bg: "rgba(var(--accent-rgb),0.08)",
               },
               {
                 label: "Failed",
@@ -1214,8 +1368,8 @@ function ReportModal({ isOpen, onClose, onDownload }) {
         )}
 
         <p style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
-          Generates a PDF with opening stock, quantity sold, and current stock
-          for the selected period.
+          Generates a PDF with opening stock, purchases, sales, adjustments and
+          closing stock for the selected period.
         </p>
 
         <div style={{ display: "flex", gap: 10, paddingTop: 4 }}>
@@ -1233,7 +1387,7 @@ function ReportModal({ isOpen, onClose, onDownload }) {
             style={{ flex: 1, justifyContent: "center" }}
           >
             {loading ? (
-              <Spinner size={13} color="#f5f0e8" />
+              <Spinner size={13} color="var(--bg)" />
             ) : (
               <Download size={14} />
             )}
@@ -1245,6 +1399,11 @@ function ReportModal({ isOpen, onClose, onDownload }) {
   );
 }
 export default function Stock() {
+  const { settings } = useSettings();
+  const [status, setStatus] = useState("");
+  const [summary, setSummary] = useState(null);
+  const [adjustTarget, setAdjustTarget] = useState(null);
+  const [historyTarget, setHistoryTarget] = useState(null);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -1261,83 +1420,46 @@ export default function Stock() {
   const [printMode, setPrintMode] = useState(false);
   const [printSelections, setPrintSelections] = useState({}); // { productId: copies }
 
-  const load = useCallback(
-    async (q = search, p = page) => {
-      setLoading(true);
-      try {
-        const res = await productAPI.getAll({ search: q, page: p, limit: 20 });
-        setProducts(res.data.data.products);
-        setTotal(res.data.data.total);
-        setPages(res.data.data.pages);
-      } catch (err) {
-        toast.error(getErrorMessage(err));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [search, page],
-  );
-
-  useEffect(() => {
-    load();
+  const fetchPage = useCallback(async (q, p, st) => {
+    setLoading(true);
+    try {
+      const params = { search: q || undefined, page: p, limit: 25 };
+      if (st) params.status = st;
+      const [res, sum] = await Promise.all([productAPI.getAll(params), productAPI.getSummary()]);
+      setProducts(res.data.data.products);
+      setTotal(res.data.data.total);
+      setPages(res.data.data.pages);
+      setSummary(sum.data.data);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  // Always reload with the current search / page / filter
+  const stateRef = React.useRef({ search, page, status });
+  stateRef.current = { search, page, status };
+  const load = useCallback(() => {
+    const st = stateRef.current;
+    return fetchPage(st.search, st.page, st.status);
+  }, [fetchPage]);
+
+  useEffect(() => {
+    fetchPage(search, page, status);
+  }, [page, status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const debouncedLoad = useCallback(
     debounce((q) => {
       setPage(1);
-      load(q, 1);
+      fetchPage(q, 1, stateRef.current.status);
     }, 380),
     [],
   );
   const handleSearch = (q) => {
     setSearch(q);
     debouncedLoad(q);
-  };
-
-  const printLabel = (p, copies = 1) => {
-    const uid = () => Math.random().toString(36).slice(2);
-    const labelCard = (name, barcode, mrp, price) => `
-      <div class="label-card">
-        <div class="product-name">${name}</div>
-        <svg id="bc-${uid()}" data-barcode="${barcode || name}" class="barcode-svg"></svg>
-        <div class="price-row">
-          ${mrp && parseFloat(mrp) > 0 ? `<span style="font-weight:800;font-size:13px;color:#888;">MRP <span class="mrp">&#8377;${parseFloat(mrp).toFixed(0)}</span></span>` : `<span></span>`}
-          <span class="price">&#8377;${parseFloat(price).toFixed(0)}</span>
-        </div>
-      </div>`;
-    const allLabels = Array.from({ length: copies }, () =>
-      labelCard(p.name, p.barcode, p.mrp, p.price),
-    ).join("");
-    const win = window.open("", "_blank");
-    win.document
-      .write(`<!DOCTYPE html><html><head><title>Labels - ${p.name}</title>
-      <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"><\/script>
-      <style>
-        *{margin:0;padding:0;box-sizing:border-box;}
-        body{font-family:Helvetica,Arial,sans-serif;background:#fff;}
-        .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4mm;padding:8mm;}
-        .label-card{border:1px solid #ccc;border-radius:4px;padding:6px 8px;display:flex;flex-direction:column;align-items:stretch;gap:2px;break-inside:avoid;width:100%;box-sizing:border-box;}
-        .store-name{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;}
-        .product-name{font-size:9px;font-weight:600;text-align:center;word-break:break-word;}
-        .barcode-svg{width:100%;height:auto;max-height:45px;}
-        .price-row{display:flex;justify-content:space-between;align-items:center;width:100%;}
-        .mrp{font-weight:800;font-size:13px;color:#888;position:relative;display:inline-block;}
-        .mrp::after{content:"";position:absolute;top:50%;left:-5%;width:110%;border-top:1.5px solid #000;transform:rotate(-20deg);transform-origin:center;}
-        .price{font-weight:800;font-size:13px;color:#bf9c5a;}
-        @media print{body{margin:0;}}
-      </style>
-    </head><body>
-      <div class="grid">${allLabels}</div>
-      <script>
-        window.onload = function() {
-          document.querySelectorAll('.barcode-svg').forEach(function(el) {
-            try { JsBarcode(el, el.getAttribute('data-barcode'), {format:"CODE128",width:1.2,height:36,displayValue:true,fontSize:9,textMargin:2,margin:2}); } catch(e){}
-          });
-          setTimeout(function(){ window.print(); }, 600);
-        };
-      <\/script>
-    </body></html>`);
-    win.document.close();
   };
 
   const handleDelete = async () => {
@@ -1400,10 +1522,10 @@ export default function Stock() {
       const doc = new jsPDF("landscape");
 
       doc.setFontSize(18);
-      doc.text("KK Shoes & Bags", 14, 18);
+      doc.text(settings.businessName || "Stock Report", 14, 18);
 
       doc.setFontSize(13);
-      doc.text("Monthly Stock Report", 14, 28);
+      doc.text("Stock Report", 14, 28);
 
       doc.setFontSize(10);
       doc.text(`Period : ${from} to ${to}`, 14, 36);
@@ -1416,9 +1538,12 @@ export default function Stock() {
             "Barcode",
             "Category",
             "Opening",
+            "Inward",
             "Sold",
-            "Current",
+            "Adjust",
+            "Closing",
             "Price",
+            "Stock value",
           ],
         ],
         body: report.map((p) => [
@@ -1426,9 +1551,12 @@ export default function Stock() {
           p.barcode || "-",
           p.category || "-",
           p.openingStock,
+          p.inward,
           p.soldQty,
-          p.currentStock,
+          p.adjustment,
+          p.closingStock,
           `Rs. ${Number(p.price).toFixed(2)}`,
+          `Rs. ${Number(p.stockValue).toFixed(2)}`,
         ]),
         styles: {
           fontSize: 8,
@@ -1515,7 +1643,7 @@ export default function Stock() {
   };
 
   return (
-    <div style={{ padding: "28px 36px", maxWidth: 1280 }} className="fade-in">
+    <div style={{ padding: "28px 36px", maxWidth: 1360 }} className="fade-in page-content stock-page">
       <ReportModal
         isOpen={showReportModal}
         onClose={() => setShowReportModal(false)}
@@ -1605,12 +1733,37 @@ export default function Stock() {
         }
       />
 
-      <SearchInput
-        value={search}
-        onChange={handleSearch}
-        placeholder="Search by name, barcode or category…"
-        style={{ marginBottom: 16, maxWidth: 400 }}
-      />
+      {summary && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 16 }}>
+          <MiniStat label="Active products" value={summary.count} />
+          <MiniStat label="Stock value (cost)" value={formatCurrency(summary.costValue)} />
+          <MiniStat label="Stock value (selling)" value={formatCurrency(summary.saleValue)} tone="accent" />
+          <MiniStat label="Low stock" value={summary.lowStock} tone={summary.lowStock ? "accent" : undefined} />
+          <MiniStat label="Out of stock" value={summary.outOfStock} tone={summary.outOfStock ? "danger" : undefined} />
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <SearchInput value={search} onChange={handleSearch} placeholder="Search by name, barcode, brand or category…" style={{ width: 360, maxWidth: "100%" }} />
+        {[
+          ["", "All"],
+          ["low", "Low stock"],
+          ["out", "Out of stock"],
+          ["expiring", "Expiring soon"],
+          ["expired", "Expired"],
+        ].map(([v, l]) => (
+          <button
+            key={v || "all"}
+            className={status === v ? "btn-primary" : "btn-ghost"}
+            style={{ padding: "7px 12px" }}
+            onClick={() => {
+              setPage(1);
+              setStatus(v);
+            }}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
 
       <div className="card" style={{ overflow: "hidden" }}>
         {loading ? (
@@ -1662,7 +1815,7 @@ export default function Stock() {
                       "Stock",
                       "Expiry",
                       "Status",
-                      "",
+                      ...(printMode ? [] : [""]),
                     ].map((h) => (
                       <th
                         key={h}
@@ -1689,7 +1842,7 @@ export default function Stock() {
                 </thead>
                 <tbody>
                   {products.map((p, i) => {
-                    const badge = stockBadge(p.quantity);
+                    const badge = stockBadge(p.quantity, p.reorderLevel);
                     return (
                       <tr
                         key={p.id}
@@ -1702,7 +1855,7 @@ export default function Stock() {
                           transition: "background 0.12s ease",
                           background:
                             printMode && printSelections[p.id] > 0
-                              ? "rgba(193,127,58,0.05)"
+                              ? "rgba(var(--accent-rgb),0.05)"
                               : undefined,
                         }}
                       >
@@ -1748,6 +1901,11 @@ export default function Stock() {
                           >
                             {p.name}
                           </p>
+                          {(p.brand || num(p.taxRate) > 0 || p.location) && (
+                            <p style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 1 }}>
+                              {[p.brand, num(p.taxRate) > 0 && `GST ${num(p.taxRate)}%`, p.location && `Rack ${p.location}`].filter(Boolean).join(" · ")}
+                            </p>
+                          )}
                           {p.serialNumber && (
                             <p
                               style={{
@@ -1787,7 +1945,9 @@ export default function Stock() {
                             fontSize: 12.5,
                           }}
                         >
-                          {p.description &&
+                          {p.netQty ? (
+                            <span style={{ background: "var(--bg-secondary)", padding: "2px 8px", borderRadius: 5, fontSize: 11.5, fontWeight: 500 }}>{p.netQty}</span>
+                          ) : p.description &&
                           p.description.startsWith("Net Qty:") ? (
                             <span
                               style={{
@@ -1846,13 +2006,14 @@ export default function Stock() {
                             textAlign: "right",
                             fontFamily: "JetBrains Mono, monospace",
                             color:
-                              p.quantity < 10
-                                ? "var(--accent)"
+                              num(p.quantity) <= num(p.reorderLevel)
+                                ? "var(--accent-dark)"
                                 : "var(--text-primary)",
                             fontWeight: 500,
+                            whiteSpace: "nowrap",
                           }}
                         >
-                          {p.quantity}
+                          {formatQty(p.quantity, p.unit)}
                         </td>
                         <td
                           style={{ padding: "13px 18px", textAlign: "center" }}
@@ -1908,11 +2069,19 @@ export default function Stock() {
                                 justifyContent: "center",
                               }}
                             >
+                              <button onClick={() => setAdjustTarget(p)} style={btnStyle} title="Adjust stock" aria-label="Adjust stock">
+                                <Sliders size={13} />
+                              </button>
+                              <button onClick={() => setHistoryTarget(p)} style={btnStyle} title="Stock history" aria-label="Stock history">
+                                <History size={13} />
+                              </button>
                               <button
                                 onClick={() => {
                                   setEditProduct(p);
                                   setProductModal(true);
                                 }}
+                                title="Edit"
+                                aria-label="Edit"
                                 style={btnStyle}
                                 onMouseEnter={(e) => {
                                   e.currentTarget.style.background =
@@ -1957,45 +2126,7 @@ export default function Stock() {
                 </tbody>
               </table>
             </div>
-            {pages > 1 && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "12px 18px",
-                  borderTop: "1px solid var(--border)",
-                }}
-              >
-                <p style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
-                  Page {page} of {pages}
-                </p>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    onClick={() => {
-                      setPage(page - 1);
-                      load(search, page - 1);
-                    }}
-                    disabled={page === 1}
-                    className="btn-ghost"
-                    style={{ padding: "6px 10px" }}
-                  >
-                    <ChevronLeft size={14} />
-                  </button>
-                  <button
-                    onClick={() => {
-                      setPage(page + 1);
-                      load(search, page + 1);
-                    }}
-                    disabled={page === pages}
-                    className="btn-ghost"
-                    style={{ padding: "6px 10px" }}
-                  >
-                    <ChevronRight size={14} />
-                  </button>
-                </div>
-              </div>
-            )}
+            <Pagination page={page} pages={pages} onChange={setPage} />
           </>
         )}
       </div>
@@ -2011,6 +2142,8 @@ export default function Stock() {
         onClose={() => setScanModal(false)}
         onScanned={load}
       />
+      <AdjustModal product={adjustTarget} onClose={() => setAdjustTarget(null)} onSaved={load} />
+      <MovementsModal product={historyTarget} onClose={() => setHistoryTarget(null)} />
       <ConfirmDialog
         isOpen={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
