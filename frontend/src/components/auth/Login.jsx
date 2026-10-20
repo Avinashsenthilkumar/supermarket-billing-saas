@@ -38,22 +38,20 @@ export default function Login() {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        minHeight: "100dvh",
         background: "var(--bg)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "24px",
+        padding: "clamp(0px, 3vw, 24px)",
       }}
     >
       <div
+        className="auth-card"
         style={{
           width: "100%",
           maxWidth: 1120,
-          minHeight: 640,
           background: "var(--bg-card)",
-          borderRadius: 28,
-          boxShadow: "0 30px 80px rgba(60,48,25,0.14)",
           display: "flex",
           overflow: "hidden",
           border: "1px solid var(--border)",
@@ -151,12 +149,12 @@ export default function Login() {
 
         {/* ── RIGHT: form ── */}
         <div
+          className="auth-form"
           style={{
             flex: 1,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            padding: "48px 56px",
           }}
         >
           <div className="fade-in" style={{ width: "100%", maxWidth: 380 }}>
@@ -187,7 +185,7 @@ export default function Login() {
             <h1
               style={{
                 fontFamily: "'Fraunces','Playfair Display',serif",
-                fontSize: 34,
+                fontSize: "clamp(26px, 6vw, 34px)",
                 fontWeight: 500,
                 color: "var(--text-primary)",
                 letterSpacing: "-0.02em",

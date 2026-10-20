@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { SettingsProvider } from "./context/SettingsContext";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import Layout from "./components/shared/Layout";
+import ErrorBoundary from "./components/shared/ErrorBoundary";
 import { PageLoader } from "./components/shared/UI";
 
 const Login = lazy(() => import("./components/auth/Login"));
@@ -41,9 +42,12 @@ const OWNER_MANAGER = ["owner", "manager"];
 
 export default function App() {
   return (
-    <AuthProvider>
-      <SettingsProvider>
-        <BrowserRouter>
+    // Outermost boundary: catches a failure in the providers themselves, which would
+    // otherwise leave a blank page with no way to recover.
+    <ErrorBoundary>
+      <AuthProvider>
+        <SettingsProvider>
+          <BrowserRouter>
           <Toaster
             position="top-right"
             toastOptions={{
@@ -88,14 +92,17 @@ export default function App() {
                 <Route path="reports" element={<ProtectedRoute roles={OWNER_MANAGER}><Reports /></ProtectedRoute>} />
                 <Route path="expenses" element={<ProtectedRoute roles={OWNER_MANAGER}><Expenses /></ProtectedRoute>} />
                 <Route path="staff" element={<ProtectedRoute roles={["owner"]}><Staff /></ProtectedRoute>} />
+                {/* Open to every role: the page itself shows only "My Account" to staff,
+                    which is where they change their own password. */}
                 <Route path="settings" element={<Settings />} />
                 <Route path="admin" element={<ProtectedRoute superAdmin><Admin /></ProtectedRoute>} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
-        </BrowserRouter>
-      </SettingsProvider>
-    </AuthProvider>
+          </BrowserRouter>
+        </SettingsProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

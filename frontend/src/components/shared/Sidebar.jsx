@@ -1,6 +1,6 @@
 // src/components/shared/Sidebar.jsx — role-aware navigation, colours follow Settings → Appearance
-import React, { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useSettings } from "../../context/SettingsContext";
 import { ROLE_LABELS } from "../../utils/helpers";
@@ -53,6 +53,8 @@ const SECTIONS = [
       { to: "/reports", icon: TrendingUp, label: "Reports", roles: ["owner", "manager"] },
       { to: "/expenses", icon: Wallet, label: "Expenses", roles: ["owner", "manager"] },
       { to: "/staff", icon: UserCog, label: "Staff", roles: ["owner"] },
+      // Everyone needs this — staff see only the "My Account" tab, where they change
+      // their own password; the shop settings tabs are owner-only inside the page.
       { to: "/settings", icon: SettingsIcon, label: "Settings" },
     ],
   },
@@ -260,42 +262,103 @@ function SidebarBody({ collapsed, onClose }) {
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebarCollapsed") === "1");
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { pathname } = useLocation();
+  const { settings } = useSettings();
+  const { shop } = useAuth();
+
   const toggle = () => {
     localStorage.setItem("sidebarCollapsed", collapsed ? "0" : "1");
     setCollapsed(!collapsed);
   };
+
+  // Close on navigation (a tap on a link) and on Escape, and stop the page behind the
+  // drawer from scrolling under it.
+  useEffect(() => setMobileOpen(false), [pathname]);
+  useEffect(() => {
+    if (!mobileOpen) return undefined;
+    const onKey = (e) => e.key === "Escape" && setMobileOpen(false);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [mobileOpen]);
+
   return (
     <>
-      <button
-        onClick={() => setMobileOpen(true)}
+      {/* Mobile top bar. The old build had only a floating button, so every page needed
+          its own guesswork padding to avoid it covering the title. A real bar reserves
+          the space once, and shows which shop the till belongs to. */}
+      <div
         className="md:hidden no-print"
-        aria-label="Open menu"
         style={{
           position: "fixed",
-          top: 14,
-          left: 14,
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 46,
           zIndex: 50,
-          padding: 8,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "0 12px",
           background: "var(--bg-card)",
-          border: "1px solid var(--border)",
-          borderRadius: 9,
-          cursor: "pointer",
-          color: "var(--text-secondary)",
+          borderBottom: "1px solid var(--border)",
         }}
       >
-        <Menu size={17} />
-      </button>
+        <button
+          onClick={() => setMobileOpen(true)}
+          aria-label="Open menu"
+          aria-expanded={mobileOpen}
+          style={{
+            padding: 7,
+            background: "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            cursor: "pointer",
+            color: "var(--text-secondary)",
+            display: "flex",
+            flexShrink: 0,
+          }}
+        >
+          <Menu size={17} />
+        </button>
+        <span
+          className="truncate-1"
+          style={{ fontSize: 13.5, fontWeight: 500, color: "var(--text-primary)", minWidth: 0 }}
+        >
+          {settings.businessName || shop?.name || "SuperMart"}
+        </span>
+      </div>
 
       {mobileOpen && (
         <div className="md:hidden" style={{ position: "fixed", inset: 0, zIndex: 60 }}>
-          <div style={{ position: "absolute", inset: 0, background: "var(--overlay)", backdropFilter: "blur(5px)" }} onClick={() => setMobileOpen(false)} />
-          <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 230 }}>
+          <div
+            style={{ position: "absolute", inset: 0, background: "var(--overlay)", backdropFilter: "blur(5px)" }}
+            onClick={() => setMobileOpen(false)}
+          />
+          <div
+            className="slide-down"
+            style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "min(250px, 82vw)", animation: "none" }}
+          >
             <button
               onClick={() => setMobileOpen(false)}
               aria-label="Close menu"
-              style={{ position: "absolute", top: 14, right: 12, zIndex: 1, color: "var(--sidebar-muted)", background: "none", border: "none", cursor: "pointer" }}
+              style={{
+                position: "absolute",
+                top: 14,
+                right: 12,
+                zIndex: 1,
+                padding: 6,
+                color: "var(--sidebar-muted)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+              }}
             >
-              <X size={17} />
+              <X size={18} />
             </button>
             <SidebarBody collapsed={false} onClose={() => setMobileOpen(false)} />
           </div>
@@ -303,13 +366,20 @@ export default function Sidebar() {
       )}
 
       <aside
-        className="hidden md:block"
-        style={{ width: collapsed ? 58 : 212, flexShrink: 0, height: "100vh", position: "sticky", top: 0, transition: "width 0.24s ease" }}
+        className="hidden md:block no-print"
+        style={{
+          width: collapsed ? 58 : 212,
+          flexShrink: 0,
+          height: "100dvh",
+          position: "sticky",
+          top: 0,
+          transition: "width 0.24s ease",
+        }}
       >
         <SidebarBody collapsed={collapsed} />
         <button
           onClick={toggle}
-          aria-label="Toggle sidebar"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           style={{
             position: "absolute",
             right: -10,

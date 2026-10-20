@@ -21,13 +21,14 @@ import {
   Percent,
 } from "lucide-react";
 import BarcodeScanner from "../shared/BarcodeScanner";
-import { productAPI, billAPI, customerAPI, openInvoice } from "../../services/api";
+import { productAPI, billAPI, customerAPI, openInvoice, newClientRef } from "../../services/api";
 import { formatCurrency, formatQty, getErrorMessage, debounce, num, PAYMENT_LABELS, currencySymbol } from "../../utils/helpers";
 import { calculateBill } from "../../utils/billMath";
 import { printReceipt } from "../../utils/receipt";
 import { Spinner, Modal, FormField } from "../shared/UI";
 import { useSettings } from "../../context/SettingsContext";
 import { useAuth } from "../../context/AuthContext";
+import usePersistentCart from "../../hooks/usePersistentCart";
 
 const mono = { fontFamily: "JetBrains Mono, monospace" };
 const qtyBtn = {
@@ -133,7 +134,19 @@ function CartItem({ item, line, onQty, onDiscount, onRemove, canDiscount }) {
   );
 }
 
-const emptyCheckout = (method) => ({ discountValue: "", discountType: "amount", redeemPoints: "", split: false, method, payments: {}, tendered: "", notes: "" });
+const emptyCheckout = (method) => ({
+  discountValue: "",
+  discountType: "amount",
+  redeemPoints: "",
+  split: false,
+  method,
+  payments: {},
+  tendered: "",
+  notes: "",
+  customerGst: "",
+  // Must be ticked before a shortfall can be booked as udhaar.
+  acceptDue: false,
+});
 
 export default function Billing() {
   const { settings } = useSettings();
@@ -143,26 +156,48 @@ export default function Billing() {
     (m) => m !== "credit" || settings.allowCreditSale,
   );
 
-  const [cart, setCart] = useState([]);
+  // The cart lives in localStorage, so a refresh, a crash, an expired session or an
+  // accidentally closed tab does not mean re-scanning the whole trolley.
+  const { cart, setCart, meta, setMeta, restored, clearCart, dismissRestored } = usePersistentCart();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [searching, setSearching] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [customer, setCustomer] = useState(null);
-  const [custPhone, setCustPhone] = useState("");
-  const [custName, setCustName] = useState("");
+  const [custPhone, setCustPhone] = useState(() => meta.custPhone || "");
+  const [custName, setCustName] = useState(() => meta.custName || "");
   const [lookingUp, setLookingUp] = useState(false);
   const [held, setHeld] = useState([]);
   const [heldOpen, setHeldOpen] = useState(false);
-  const [heldId, setHeldId] = useState(null);
+  const [heldId, setHeldId] = useState(() => meta.heldId || null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkout, setCheckout] = useState(emptyCheckout(settings.defaultPaymentMethod || "cash"));
   const [submitting, setSubmitting] = useState(false);
   const [lastBill, setLastBill] = useState(null);
+  // Mobile: the cart is a sheet that slides up rather than a permanently docked panel.
+  const [cartOpen, setCartOpen] = useState(false);
+  // Kept after the success modal is dismissed so a jammed or out-of-paper printer can be
+  // retried without digging through Sales History mid-queue.
+  const [prevBill, setPrevBill] = useState(null);
   const searchRef = useRef(null);
   const usbBuffer = useRef("");
   const usbTimer = useRef(null);
+  // One key per checkout attempt. Kept until the sale succeeds so a retry after a
+  // timeout re-uses it and the server returns the first bill instead of making a second.
+  const clientRef = useRef(newClientRef());
+
+  // Keep the customer fields with the cart they belong to.
+  useEffect(() => {
+    setMeta({ custPhone, custName, heldId });
+  }, [custPhone, custName, heldId, setMeta]);
+
+  // Tell the cashier once that an interrupted sale was recovered.
+  useEffect(() => {
+    if (!restored) return;
+    toast.success(`Recovered ${cart.length} item${cart.length === 1 ? "" : "s"} from your last sale`, { duration: 4000 });
+    dismissRestored();
+  }, [restored]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Cart operations ────────────────────────────────────────────────────────
   const addToCart = useCallback(
@@ -239,12 +274,15 @@ export default function Billing() {
   const setItemDiscount = (productId, value) => setCart((prev) => prev.map((i) => (i.productId === productId ? { ...i, discount: Math.max(0, num(value)) } : i)));
   const removeFromCart = (id) => setCart((prev) => prev.filter((i) => i.productId !== id));
   const resetSale = () => {
-    setCart([]);
+    clearCart();
     setCustomer(null);
     setCustPhone("");
     setCustName("");
     setHeldId(null);
+    setCartOpen(false);
     setCheckout(emptyCheckout(settings.defaultPaymentMethod || "cash"));
+    // A finished sale is a new transaction, so the next one gets a fresh idempotency key.
+    clientRef.current = newClientRef();
     setTimeout(() => searchRef.current?.focus(), 50);
   };
 
@@ -352,6 +390,8 @@ export default function Billing() {
     if (h.meta?.custPhone) lookupCustomer(h.meta.custPhone);
     setHeldId(h.id);
     setHeldOpen(false);
+    // A resumed bill is a different transaction from whatever was in the cart before.
+    clientRef.current = newClientRef();
   };
 
   // ── Totals (same math as server) ──────────────────────────────────────────
@@ -386,33 +426,65 @@ export default function Billing() {
   const tendered = paymentList.filter((p) => p.method !== "credit").reduce((s, p) => s + p.amount, 0);
   const change = Math.max(0, tendered - calc.totalAmount);
   const due = Math.max(0, Math.round((calc.totalAmount - tendered) * 100) / 100);
+  // Credit was asked for explicitly if a credit line is in the payment list — which covers
+  // both the Credit button and a credit amount typed into the split form. Anything else
+  // that leaves a balance needs the cashier to tick the confirmation below.
+  const creditChosen = paymentList.some((p) => p.method === "credit");
 
   // ── Submit ─────────────────────────────────────────────────────────────────
   const submitBill = async () => {
     if (!cart.length || submitting) return;
-    if (due > 0 && !custPhone.trim() && settings.requireCustomerForCredit) return toast.error("Enter customer phone for a credit / due sale");
+
+    // A shortfall is only ever a credit sale when the cashier has ticked the box. The
+    // server enforces the same rule; this just explains it before the round trip.
+    if (due > 0 && !checkout.acceptDue && !creditChosen) {
+      setCartOpen(false);
+      return toast.error(`Short by ${formatCurrency(due)} — collect the full amount, or tick "Put the balance on credit".`);
+    }
+    if (due > 0 && !custPhone.trim() && !customer) {
+      return toast.error("Enter the customer's phone number for a credit / due sale");
+    }
+
     setSubmitting(true);
     try {
       const res = await billAPI.create({
+        // Same key for every retry of this sale — the server returns the original bill
+        // rather than creating a second one and taking the stock down twice.
+        clientRef: clientRef.current,
         items: cart.map((i) => ({ productId: i.productId, quantity: i.quantity, discount: num(i.discount) })),
         customerId: customer?.id,
         customerName: custName || undefined,
         customerPhone: custPhone.trim() || undefined,
+        customerGstNumber: checkout.customerGst?.trim() || undefined,
         discountAmount: checkout.discountType === "amount" ? num(checkout.discountValue) : 0,
         discountPercent: checkout.discountType === "percent" ? num(checkout.discountValue) : 0,
         redeemPoints: redeem || 0,
         payments: paymentList,
+        acceptDue: !!checkout.acceptDue,
         notes: checkout.notes || undefined,
         heldBillId: heldId || undefined,
       });
       const bill = res.data.data.bill;
+      if (res.data.duplicate) toast("This sale was already saved — showing the original bill", { icon: "ℹ️" });
       setLastBill(bill);
+      setPrevBill(bill);
       setCheckoutOpen(false);
       resetSale();
       if (heldId) loadHeld();
       if (settings.autoPrintAfterSale) printReceipt(bill, settings);
     } catch (err) {
-      toast.error(getErrorMessage(err));
+      const status = err?.response?.status;
+      if (!err?.response) {
+        // Nothing came back: the bill may or may not have been written. Keeping the same
+        // clientRef means pressing Confirm again is safe either way.
+        toast.error("No answer from the server — check the connection and press Confirm again. The bill will not be duplicated.", {
+          duration: 7000,
+        });
+      } else if (status === 409 || status === 429) {
+        toast.error(getErrorMessage(err), { duration: 6000 });
+      } else {
+        toast.error(getErrorMessage(err));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -420,6 +492,7 @@ export default function Billing() {
 
   const openCheckout = () => {
     if (!cart.length) return;
+    setCartOpen(false);
     setCheckout((c) => ({ ...c, method: methods.includes(c.method) ? c.method : methods[0] }));
     setCheckoutOpen(true);
   };
@@ -472,15 +545,35 @@ export default function Billing() {
   const pointsValue = customer ? num(customer.loyaltyPoints) * num(settings.loyaltyPointValue, 1) : 0;
 
   return (
-    <div className="billing-layout" style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+    <div className="billing-layout">
       {/* ── Left panel ── */}
-      <div className="billing-main" style={{ flex: 1, overflowY: "auto", padding: "28px 32px", display: "flex", flexDirection: "column", gap: 18 }}>
-        <div style={{ paddingBottom: 16, borderBottom: "1px solid var(--border)", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div>
-            <h1 style={{ fontFamily: "'Fraunces','Playfair Display',serif", fontSize: 26, fontWeight: 300, color: "var(--text-primary)" }}>Billing</h1>
-            <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 3 }}>F2 search · F4 hold · F9 checkout · scan anywhere</p>
+      <div className="billing-main">
+        <div className="section-head" style={{ marginBottom: 0 }}>
+          <div style={{ minWidth: 0 }}>
+            <h1 style={{ fontFamily: "'Fraunces','Playfair Display',serif", fontSize: "clamp(21px, 4.5vw, 26px)", fontWeight: 300, color: "var(--text-primary)" }}>
+              Billing
+            </h1>
+            <p className="no-print" style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 3 }}>
+              <span className="hidden sm:inline">F2 search · F4 hold · F9 checkout · scan anywhere</span>
+              <span className="sm:hidden">Scan or search to add items</span>
+            </p>
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="section-head-actions">
+            {/* Printers run out of paper mid-queue; this reprints without leaving the till */}
+            {prevBill && (
+              <button
+                className="btn-ghost"
+                title={`Reprint ${prevBill.billNumber}`}
+                onClick={() => {
+                  if (!printReceipt(prevBill, settings)) toast.error("Could not open the print dialog");
+                }}
+              >
+                <Printer size={14} /> Reprint
+                <span className="hidden sm:inline" style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, opacity: 0.7 }}>
+                  {prevBill.billNumber}
+                </span>
+              </button>
+            )}
             <button className="btn-ghost" onClick={() => setHeldOpen(true)}>
               <PlayCircle size={14} /> Held ({held.length})
             </button>
@@ -569,7 +662,7 @@ export default function Billing() {
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" }}>
             <User size={14} style={{ color: "var(--accent)" }} /> Customer <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(optional — needed for credit & points)</span>
           </div>
-          <div className="form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="form-grid" style={{ gap: 10 }}>
             <div style={{ position: "relative" }}>
               <input
                 className="input-field"
@@ -607,11 +700,59 @@ export default function Billing() {
         </div>
       </div>
 
-      {/* ── Right: Cart ── */}
-      <div className="billing-cart" style={{ width: 430, borderLeft: "1px solid var(--border)", display: "flex", flexDirection: "column", background: "var(--bg-card)" }}>
-        <div style={{ padding: "20px 22px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <ShoppingCart size={16} style={{ color: "var(--accent)" }} />
+      {/* ── Mobile: pinned summary bar that opens the cart sheet ── */}
+      <div className="billing-bar no-print">
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}>
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            <ShoppingCart size={20} style={{ color: cart.length ? "var(--accent)" : "var(--text-muted)" }} />
+            {cart.length > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: -6,
+                  right: -8,
+                  background: "var(--accent)",
+                  color: "var(--accent-contrast)",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  minWidth: 17,
+                  height: 17,
+                  padding: "0 4px",
+                  borderRadius: 99,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {cart.length}
+              </span>
+            )}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.2 }}>
+              {cart.length ? `${cart.length} item${cart.length === 1 ? "" : "s"} · ${formatQty(totalQty)} qty` : "Cart is empty"}
+            </p>
+            <p className="tabular" style={{ fontSize: 17, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.25 }}>
+              {formatCurrency(calc.totalAmount)}
+            </p>
+          </div>
+        </div>
+        <button className="btn-ghost" style={{ flexShrink: 0 }} onClick={() => setCartOpen(true)} disabled={!cart.length}>
+          View
+        </button>
+        <button className="btn-primary" style={{ flexShrink: 0 }} onClick={openCheckout} disabled={!cart.length}>
+          <Receipt size={14} /> Pay
+        </button>
+      </div>
+
+      {/* Backdrop behind the mobile cart sheet */}
+      {cartOpen && <div className="billing-cart-backdrop no-print" onClick={() => setCartOpen(false)} />}
+
+      {/* ── Right: Cart (docked on desktop, bottom sheet on mobile) ── */}
+      <div className={`billing-cart${cartOpen ? " open" : ""}`}>
+        <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <ShoppingCart size={16} style={{ color: "var(--accent)", flexShrink: 0 }} />
             <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>Cart</span>
             {cart.length > 0 && (
               <span style={{ background: "var(--accent)", color: "var(--accent-contrast)", fontSize: 11, fontWeight: 700, minWidth: 20, height: 20, padding: "0 6px", borderRadius: 99, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -620,22 +761,32 @@ export default function Billing() {
             )}
             {heldId && <span style={{ fontSize: 11, color: "var(--accent-dark)" }}>(resumed)</span>}
           </div>
-          {cart.length > 0 && (
-            <div style={{ display: "flex", gap: 12 }}>
-              <button onClick={holdCurrent} style={{ fontSize: 12, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-                <PauseCircle size={13} /> Hold
-              </button>
-              <button
-                onClick={() => window.confirm("Clear the cart?") && resetSale()}
-                style={{ fontSize: 12, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
-              >
-                <Trash2 size={12} /> Clear
-              </button>
-            </div>
-          )}
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexShrink: 0 }}>
+            {cart.length > 0 && (
+              <>
+                <button onClick={holdCurrent} style={{ fontSize: 12, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                  <PauseCircle size={13} /> Hold
+                </button>
+                <button
+                  onClick={() => window.confirm("Clear the cart?") && resetSale()}
+                  style={{ fontSize: 12, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                >
+                  <Trash2 size={12} /> Clear
+                </button>
+              </>
+            )}
+            <button
+              className="billing-cart-close"
+              aria-label="Close cart"
+              onClick={() => setCartOpen(false)}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", padding: "0 22px" }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "0 20px", minHeight: 0 }}>
           {cart.length === 0 ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 200, gap: 8 }}>
               <ShoppingCart size={28} style={{ color: "var(--border-strong)" }} />
@@ -658,7 +809,7 @@ export default function Billing() {
         </div>
 
         {cart.length > 0 && (
-          <div style={{ padding: "14px 22px", borderTop: "1px solid var(--border)" }}>
+          <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14, fontSize: 13, color: "var(--text-secondary)" }}>
               <Row label={`Subtotal (${formatQty(totalQty)} qty)`} value={formatCurrency(calc.subtotal)} />
               {calc.itemDiscount > 0 && <Row label="Item discounts" value={`−${formatCurrency(calc.itemDiscount)}`} color="var(--success)" />}
@@ -783,7 +934,15 @@ export default function Billing() {
                 className="input-field"
                 value={checkout.tendered}
                 onChange={(e) => setCheckout({ ...checkout, tendered: e.target.value })}
+                onKeyDown={(e) => {
+                  // Type the cash received, press Enter, done — no reaching for the mouse.
+                  if (e.key === "Enter" && !submitting) {
+                    e.preventDefault();
+                    submitBill();
+                  }
+                }}
                 placeholder={calc.totalAmount.toFixed(2)}
+                inputMode="decimal"
                 autoFocus
               />
               <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
@@ -800,7 +959,7 @@ export default function Billing() {
           )}
 
           {checkout.split && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }} className="form-grid">
+            <div className="form-grid" style={{ gap: 10 }}>
               {methods.map((m) => (
                 <FormField key={m} label={PAYMENT_LABELS[m] || m}>
                   <input
@@ -821,9 +980,54 @@ export default function Billing() {
             {due > 0 && <Row label="Balance due (credit)" value={formatCurrency(due)} color="var(--danger)" bold />}
           </div>
 
-          <FormField label="Note (optional)">
-            <input className="input-field" value={checkout.notes} onChange={(e) => setCheckout({ ...checkout, notes: e.target.value })} />
-          </FormField>
+          {/* A shortfall is almost always a typo. It becomes udhaar only when the cashier
+              says so, so a mistyped tender can no longer turn into silent debt. */}
+          {due > 0 && !creditChosen && (
+            <label
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 10,
+                padding: "11px 13px",
+                borderRadius: 10,
+                cursor: "pointer",
+                background: checkout.acceptDue ? "var(--danger-light)" : "var(--bg-sunken)",
+                border: `1px solid ${checkout.acceptDue ? "var(--danger)" : "var(--border)"}`,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={!!checkout.acceptDue}
+                onChange={(e) => setCheckout({ ...checkout, acceptDue: e.target.checked })}
+                style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "var(--danger)" }}
+              />
+              <span style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5 }}>
+                Put the balance of <b>{formatCurrency(due)}</b> on credit (udhaar)
+                <span style={{ display: "block", fontSize: 11.5, color: "var(--text-muted)", marginTop: 1 }}>
+                  {custName || custPhone
+                    ? `Added to ${custName || custPhone}'s account to collect later.`
+                    : "Enter the customer's phone above — a due needs an account to collect from."}
+                </span>
+              </span>
+            </label>
+          )}
+
+          <div className="form-grid" style={{ gap: 12 }}>
+            <FormField label="Note (optional)">
+              <input className="input-field" value={checkout.notes} onChange={(e) => setCheckout({ ...checkout, notes: e.target.value })} />
+            </FormField>
+            {/* A B2B buyer needs their GSTIN on the invoice to claim input credit */}
+            <FormField label="Customer GSTIN (optional)" hint="For a B2B tax invoice">
+              <input
+                className="input-field"
+                value={checkout.customerGst}
+                onChange={(e) => setCheckout({ ...checkout, customerGst: e.target.value.toUpperCase() })}
+                placeholder="33ABCDE1234F1Z5"
+                maxLength={15}
+                style={{ textTransform: "uppercase", fontFamily: "JetBrains Mono, monospace" }}
+              />
+            </FormField>
+          </div>
 
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={() => setCheckoutOpen(false)} className="btn-ghost" style={{ flex: 1, justifyContent: "center" }}>
@@ -889,7 +1093,13 @@ export default function Billing() {
               {num(lastBill.loyaltyEarned) > 0 && <p style={{ fontSize: 12.5, color: "var(--accent-dark)", marginTop: 4 }}>+{num(lastBill.loyaltyEarned)} loyalty points</p>}
             </div>
             <div style={{ display: "flex", gap: 8, width: "100%" }}>
-              <button className="btn-ghost" style={{ flex: 1, justifyContent: "center" }} onClick={() => printReceipt(lastBill, settings) || toast.error("Allow pop-ups to print")}>
+              <button
+                className="btn-ghost"
+                style={{ flex: 1, justifyContent: "center" }}
+                onClick={() => {
+                  if (!printReceipt(lastBill, settings)) toast.error("Could not open the print dialog");
+                }}
+              >
                 <Printer size={14} /> Print
               </button>
               <button

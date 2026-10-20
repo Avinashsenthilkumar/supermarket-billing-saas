@@ -163,56 +163,55 @@ export default function Transactions() {
           <EmptyState icon={FileText} title="No bills found" description="Bills appear here after checkout" />
         ) : (
           <>
-            <div className="transactions-table">
-              <Table minWidth={820}>
-                <thead>
-                  <tr>
-                    <Th>Bill no.</Th>
-                    <Th>Date & time</Th>
-                    <Th>Customer</Th>
-                    <Th align="right">Items</Th>
-                    <Th>Payment</Th>
-                    <Th align="right">Total</Th>
-                    <Th align="center">Status</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bills.map((bill) => {
-                    const [tone, label] = STATUS[bill.status] || ["neutral", bill.status];
-                    return (
-                      <tr key={bill.id} className="table-row-hover" onClick={() => openBill(bill)} style={{ cursor: "pointer" }}>
-                        <Td mono style={{ fontWeight: 500 }}>
-                          {bill.billNumber}
-                        </Td>
-                        <Td muted style={{ whiteSpace: "nowrap", fontSize: 12.5 }}>
-                          {formatDateTime(bill.createdAt)}
-                        </Td>
-                        <Td>
-                          {bill.customerName || <span style={{ color: "var(--text-muted)" }}>—</span>}
-                          {bill.customerPhone && <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{bill.customerPhone}</div>}
-                        </Td>
-                        <Td align="right" mono>
-                          {bill.items?.length || 0}
-                        </Td>
-                        <Td>
-                          <span style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5 }}>
-                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: paymentColor(bill.paymentMethod) }} />
-                            {PAYMENT_LABELS[bill.paymentMethod] || bill.paymentMethod}
-                          </span>
-                        </Td>
-                        <Td align="right" mono style={{ fontWeight: 600 }}>
-                          {formatCurrency(bill.totalAmount)}
-                          {num(bill.dueAmount) > 0 && <div style={{ fontSize: 11, color: "var(--danger)" }}>due {formatCurrency(bill.dueAmount)}</div>}
-                        </Td>
-                        <Td align="center">
-                          <Pill tone={tone}>{label}</Pill>
-                        </Td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </Table>
-            </div>
+            <Table minWidth={820}>
+              <thead>
+                <tr>
+                  <Th>Bill no.</Th>
+                  <Th>Date &amp; time</Th>
+                  <Th>Customer</Th>
+                  <Th align="right">Items</Th>
+                  <Th>Payment</Th>
+                  <Th align="right">Total</Th>
+                  <Th align="center">Status</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {bills.map((bill) => {
+                  const [tone, label] = STATUS[bill.status] || ["neutral", bill.status];
+                  return (
+                    <tr key={bill.id} className="table-row-hover" onClick={() => openBill(bill)} style={{ cursor: "pointer" }}>
+                      {/* `label` + `primary` drive the mobile card layout — see .table-stack */}
+                      <Td primary mono style={{ fontWeight: 500 }}>
+                        {bill.billNumber}
+                      </Td>
+                      <Td label="Date & time" muted style={{ whiteSpace: "nowrap", fontSize: 12.5 }}>
+                        {formatDateTime(bill.createdAt)}
+                      </Td>
+                      <Td label="Customer">
+                        {bill.customerName || <span style={{ color: "var(--text-muted)" }}>—</span>}
+                        {bill.customerPhone && <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{bill.customerPhone}</div>}
+                      </Td>
+                      <Td label="Items" align="right" mono>
+                        {bill.items?.length || 0}
+                      </Td>
+                      <Td label="Payment">
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5 }}>
+                          <span style={{ width: 7, height: 7, borderRadius: "50%", background: paymentColor(bill.paymentMethod), flexShrink: 0 }} />
+                          {PAYMENT_LABELS[bill.paymentMethod] || bill.paymentMethod}
+                        </span>
+                      </Td>
+                      <Td label="Total" align="right" mono style={{ fontWeight: 600 }}>
+                        {formatCurrency(bill.totalAmount)}
+                        {num(bill.dueAmount) > 0 && <div style={{ fontSize: 11, color: "var(--danger)" }}>due {formatCurrency(bill.dueAmount)}</div>}
+                      </Td>
+                      <Td label="Status" align="center">
+                        <Pill tone={tone}>{label}</Pill>
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
             <Pagination page={page} pages={pages} onChange={setPage} />
           </>
         )}
@@ -222,7 +221,7 @@ export default function Transactions() {
       <Modal isOpen={!!selected && !returnOpen && !cancelOpen} onClose={() => setSelected(null)} title={selected?.billNumber} maxWidth={620}>
         {selected && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }} className="form-grid">
+            <div className="form-grid-3" style={{ gap: 8 }}>
               {[
                 ["Date", formatDateTime(selected.createdAt)],
                 ["Payment", PAYMENT_LABELS[selected.paymentMethod] || selected.paymentMethod],
@@ -249,7 +248,7 @@ export default function Transactions() {
               <tbody>
                 {selected.items?.map((item) => (
                   <tr key={item.id}>
-                    <Td>
+                    <Td primary>
                       <p style={{ fontWeight: 500 }}>{item.productName}</p>
                       <p style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
                         {[num(item.taxRate) > 0 && `GST ${num(item.taxRate)}%`, num(item.discount) > 0 && `disc ${formatCurrency(item.discount)}`, num(item.returnedQty) > 0 && `returned ${formatQty(item.returnedQty)}`]
@@ -257,13 +256,13 @@ export default function Transactions() {
                           .join(" · ")}
                       </p>
                     </Td>
-                    <Td align="right" mono>
+                    <Td label="Qty" align="right" mono>
                       {formatQty(item.quantity, item.unit)}
                     </Td>
-                    <Td align="right" mono>
+                    <Td label="Rate" align="right" mono>
                       {formatCurrency(item.unitPrice)}
                     </Td>
-                    <Td align="right" mono>
+                    <Td label="Amount" align="right" mono>
                       {formatCurrency(item.totalPrice)}
                     </Td>
                   </tr>
@@ -428,11 +427,11 @@ function ReturnModal({ bill, onClose, onDone }) {
             const avail = Math.round((num(it.quantity) - num(it.returnedQty)) * 1000) / 1000;
             return (
               <tr key={it.id}>
-                <Td>{it.productName}</Td>
-                <Td align="right" mono>
+                <Td primary>{it.productName}</Td>
+                <Td label="Can return" align="right" mono>
                   {formatQty(avail, it.unit)}
                 </Td>
-                <Td align="right">
+                <Td label="Return qty" align="right">
                   <input
                     type="number"
                     min="0"
@@ -445,7 +444,7 @@ function ReturnModal({ bill, onClose, onDone }) {
                     onChange={(e) => setQty({ ...qty, [it.id]: Math.min(avail, Math.max(0, num(e.target.value))) || "" })}
                   />
                 </Td>
-                <Td align="center">
+                <Td label="Back to stock" align="center">
                   <input type="checkbox" checked={restock[it.id] !== false} onChange={(e) => setRestock({ ...restock, [it.id]: e.target.checked })} style={{ accentColor: "var(--accent)" }} />
                 </Td>
               </tr>
@@ -453,7 +452,7 @@ function ReturnModal({ bill, onClose, onDone }) {
           })}
         </tbody>
       </Table>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 14 }} className="form-grid">
+      <div className="form-grid" style={{ gap: 12, marginTop: 14 }}>
         <FormField label="Refund as">
           <select className="input-field" value={refundMethod} onChange={(e) => setRefundMethod(e.target.value)}>
             <option value="cash">Cash</option>

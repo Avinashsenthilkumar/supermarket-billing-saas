@@ -84,7 +84,7 @@ export default function CustomerDetails() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 20 }}>
+      <div className="grid-stats-sm" style={{ marginBottom: 20 }}>
         <MiniStat label="Total spent" value={formatCurrency(c.totalSpent)} />
         <MiniStat label="Bills" value={c.totalBills} />
         <MiniStat label={balance >= 0 ? "Due (to collect)" : "Advance / store credit"} value={formatCurrency(Math.abs(balance))} tone={balance > 0 ? "danger" : balance < 0 ? "success" : undefined} />
@@ -121,18 +121,18 @@ export default function CustomerDetails() {
               <tbody>
                 {bills.map((b) => (
                   <tr key={b.id}>
-                    <Td mono>
+                    <Td primary mono>
                       {b.billNumber} {b.status !== "completed" && <Pill tone={b.status === "cancelled" ? "danger" : "warning"}>{b.status.replace("_", " ")}</Pill>}
                     </Td>
-                    <Td muted>{formatDateTime(b.createdAt)}</Td>
-                    <Td>{PAYMENT_LABELS[b.paymentMethod] || b.paymentMethod}</Td>
-                    <Td align="right" mono>
+                    <Td label="Date" muted>{formatDateTime(b.createdAt)}</Td>
+                    <Td label="Payment">{PAYMENT_LABELS[b.paymentMethod] || b.paymentMethod}</Td>
+                    <Td label="Total" align="right" mono>
                       {formatCurrency(b.totalAmount)}
                     </Td>
-                    <Td align="right" mono style={{ color: num(b.dueAmount) > 0 ? "var(--danger)" : "var(--text-muted)" }}>
+                    <Td label="Due" align="right" mono style={{ color: num(b.dueAmount) > 0 ? "var(--danger)" : "var(--text-muted)" }}>
                       {num(b.dueAmount) > 0 ? formatCurrency(b.dueAmount) : "—"}
                     </Td>
-                    <Td align="center">
+                    <Td label="Actions" align="center">
                       <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
                         <button className="btn-ghost" style={{ padding: "4px 8px" }} title="Print" onClick={() => printReceipt(b, settings)}>
                           <Printer size={13} />
@@ -164,11 +164,11 @@ export default function CustomerDetails() {
               <tbody>
                 {payments.map((p) => (
                   <tr key={p.id}>
-                    <Td muted>{formatDateTime(p.createdAt)}</Td>
-                    <Td>{PAYMENT_LABELS[p.method] || p.method}</Td>
-                    <Td muted>{[p.reference, p.notes].filter(Boolean).join(" · ") || "—"}</Td>
-                    <Td muted>{p.createdBy}</Td>
-                    <Td align="right" mono style={{ color: "var(--success)" }}>
+                    <Td primary muted>{formatDateTime(p.createdAt)}</Td>
+                    <Td label="Method">{PAYMENT_LABELS[p.method] || p.method}</Td>
+                    <Td label="Reference" muted>{[p.reference, p.notes].filter(Boolean).join(" · ") || "—"}</Td>
+                    <Td label="By" muted>{p.createdBy}</Td>
+                    <Td label="Amount" align="right" mono style={{ color: "var(--success)" }}>
                       {formatCurrency(p.amount)}
                     </Td>
                   </tr>
@@ -193,11 +193,11 @@ export default function CustomerDetails() {
               <tbody>
                 {returns.map((r) => (
                   <tr key={r.id}>
-                    <Td mono>{r.returnNumber}</Td>
-                    <Td mono>{r.billNumber}</Td>
-                    <Td muted>{formatDateTime(r.createdAt)}</Td>
-                    <Td>{r.refundMethod.replace("_", " ")}</Td>
-                    <Td align="right" mono>
+                    <Td primary mono>{r.returnNumber}</Td>
+                    <Td label="Bill" mono>{r.billNumber}</Td>
+                    <Td label="Date" muted>{formatDateTime(r.createdAt)}</Td>
+                    <Td label="Refund">{r.refundMethod.replace("_", " ")}</Td>
+                    <Td label="Amount" align="right" mono>
                       {formatCurrency(r.totalAmount)}
                     </Td>
                   </tr>

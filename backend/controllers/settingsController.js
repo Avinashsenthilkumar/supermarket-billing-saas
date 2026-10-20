@@ -1,6 +1,7 @@
 // controllers/settingsController.js — per-business settings (stored in the shop's own DB)
 const { asyncHandler, HttpError, bool, num } = require("../utils/helpers");
 const { SHOP_SETTING_DEFAULTS, SHOP_SETTING_KEYS, mergeSettings } = require("../utils/defaults");
+const { getSettingRow } = require("../utils/settings");
 const { Shop } = require("../models/master");
 
 const ENUMS = {
@@ -17,8 +18,13 @@ const sanitize = (key, value) => {
   if (ENUMS[key]) return ENUMS[key].includes(value) ? value : def;
   if (key === "accentColor") return /^#[0-9a-fA-F]{6}$/.test(value || "") ? value : def;
   if (key === "logo") {
-    const s = String(value || "");
-    if (s && !/^data:image\/(png|jpe?g|webp|svg\+xml);base64,/.test(s)) throw new HttpError(400, "Logo must be a PNG, JPG, WEBP or SVG image");
+    const s = String(value || "").trim();
+    if (!s) return "";
+    // Strict shape: nothing but a base64 raster data URL. The logo is interpolated into
+    // printed receipt HTML and into the PDF, so anything else (an SVG that can carry
+    // markup, or stray quotes that would break out of the src="…" attribute) is rejected.
+    const m = /^data:image\/(png|jpeg|jpg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(s);
+    if (!m) throw new HttpError(400, "Logo must be a PNG, JPG or WEBP image");
     if (s.length > 700000) throw new HttpError(400, "Logo is too large (max ~500 KB)");
     return s;
   }
@@ -50,7 +56,7 @@ const getSettings = asyncHandler(async (req, res) => {
 // PUT /api/settings  (owner)
 const updateSettings = asyncHandler(async (req, res) => {
   const body = req.body || {};
-  const row = await req.db.Setting.findByPk(1);
+  const row = await getSettingRow(req.db);
   const current = mergeSettings(row.data);
   const next = { ...current };
   SHOP_SETTING_KEYS.forEach((key) => {
@@ -76,7 +82,7 @@ const updateSettings = asyncHandler(async (req, res) => {
 
 // POST /api/settings/reset-appearance
 const resetAppearance = asyncHandler(async (req, res) => {
-  const row = await req.db.Setting.findByPk(1);
+  const row = await getSettingRow(req.db);
   const next = mergeSettings(row.data);
   ["themeMode", "accentColor", "sidebarStyle", "fontScale", "compactMode"].forEach((k) => {
     next[k] = SHOP_SETTING_DEFAULTS[k];

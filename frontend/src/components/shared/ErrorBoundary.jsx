@@ -1,0 +1,108 @@
+// src/components/shared/ErrorBoundary.jsx
+// Without this, one bad render anywhere in the tree blanks the whole till mid-sale and the
+// cashier has no way back except closing the browser. Here they get the cart back instead.
+import React from "react";
+
+const box = {
+  minHeight: "100dvh",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 24,
+  background: "var(--bg)",
+};
+
+export default class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null, info: null, showDetail: false };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    this.setState({ info });
+    // Kept in the console so a shop can read it out over the phone to support.
+    console.error("[SuperMart] render error:", error, info?.componentStack);
+  }
+
+  reset = () => this.setState({ error: null, info: null, showDetail: false });
+
+  render() {
+    const { error, info, showDetail } = this.state;
+    if (!error) return this.props.children;
+
+    const held = (() => {
+      try {
+        const raw = JSON.parse(localStorage.getItem("pos.cart") || "null");
+        return Array.isArray(raw?.cart) ? raw.cart.length : 0;
+      } catch {
+        return 0;
+      }
+    })();
+
+    return (
+      <div style={box}>
+        <div className="card" style={{ maxWidth: 560, width: "100%", padding: "28px 26px" }}>
+          <p style={{ fontSize: 34, lineHeight: 1 }} aria-hidden="true">
+            ⚠️
+          </p>
+          <h1 style={{ fontSize: 22, marginTop: 10, color: "var(--text-primary)" }}>Something broke on this screen</h1>
+          <p style={{ fontSize: 13.5, color: "var(--text-secondary)", marginTop: 8, lineHeight: 1.6 }}>
+            Nothing was lost on the server — every saved bill is safe.
+            {held > 0 && ` The ${held} item${held === 1 ? "" : "s"} in your cart are still here, so you can carry on billing.`}
+          </p>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
+            <button className="btn-primary" onClick={this.reset}>
+              Try again
+            </button>
+            <button className="btn-ghost" onClick={() => window.location.assign("/billing")}>
+              Back to billing
+            </button>
+            <button className="btn-ghost" onClick={() => window.location.reload()}>
+              Reload app
+            </button>
+          </div>
+
+          <button
+            onClick={() => this.setState({ showDetail: !showDetail })}
+            style={{
+              marginTop: 18,
+              background: "none",
+              border: "none",
+              padding: 0,
+              fontSize: 12.5,
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              textDecoration: "underline",
+            }}
+          >
+            {showDetail ? "Hide technical details" : "Show technical details"}
+          </button>
+          {showDetail && (
+            <pre
+              style={{
+                marginTop: 10,
+                maxHeight: 220,
+                overflow: "auto",
+                fontSize: 11,
+                lineHeight: 1.5,
+                padding: 12,
+                borderRadius: 8,
+                background: "var(--bg-sunken)",
+                color: "var(--text-secondary)",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {String(error?.stack || error?.message || error)}
+              {info?.componentStack || ""}
+            </pre>
+          )}
+        </div>
+      </div>
+    );
+  }
+}

@@ -419,22 +419,22 @@ function MovementsModal({ product, onClose }) {
             <tbody>
               {rows.map((m) => (
                 <tr key={m.id}>
-                  <Td muted style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>
+                  <Td primary muted style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>
                     {formatDateTime(m.createdAt)}
                   </Td>
-                  <Td>
+                  <Td label="Type">
                     {MOVE_LABELS[m.type] || m.type}
                     {m.note && <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{m.note}</div>}
                   </Td>
-                  <Td mono muted>
+                  <Td label="Reference" mono muted>
                     {m.reference || "—"}
                     {m.userName && <div style={{ fontSize: 11 }}>{m.userName}</div>}
                   </Td>
-                  <Td align="right" mono style={{ color: num(m.quantity) < 0 ? "var(--danger)" : "var(--success)" }}>
+                  <Td label="Change" align="right" mono style={{ color: num(m.quantity) < 0 ? "var(--danger)" : "var(--success)" }}>
                     {num(m.quantity) > 0 ? "+" : ""}
                     {formatQty(m.quantity)}
                   </Td>
-                  <Td align="right" mono>
+                  <Td label="Balance" align="right" mono>
                     {formatQty(m.balanceAfter)}
                   </Td>
                 </tr>
@@ -524,9 +524,7 @@ function ScanForm({ scanned, isNew, onSubmit, onReset, loading }) {
               autoFocus
             />
           </FormField>
-          <div
-            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
-          >
+          <div className="form-grid" style={{ gap: 10 }}>
             <FormField label="Price (₹)" required>
               <input
                 type="text"
@@ -550,7 +548,7 @@ function ScanForm({ scanned, isNew, onSubmit, onReset, loading }) {
         </>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      <div className="form-grid" style={{ gap: 10 }}>
         <FormField label={isNew ? "Initial Quantity" : "Quantity to Add"}>
           <input
             type="text"
@@ -1196,7 +1194,7 @@ function BulkImportModal({ isOpen, onClose, onImported }) {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr 1fr",
+              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
               gap: 12,
               width: "100%",
             }}
@@ -1345,9 +1343,7 @@ function ReportModal({ isOpen, onClose, onDownload }) {
         </FormField>
 
         {type === "custom" && (
-          <div
-            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
-          >
+          <div className="form-grid" style={{ gap: 12 }}>
             <FormField label="Start Date">
               <input
                 type="date"
@@ -1643,7 +1639,7 @@ export default function Stock() {
   };
 
   return (
-    <div style={{ padding: "28px 36px", maxWidth: 1360 }} className="fade-in page-content stock-page">
+    <div style={{ maxWidth: 1360, margin: "0 auto" }} className="fade-in page-content">
       <ReportModal
         isOpen={showReportModal}
         onClose={() => setShowReportModal(false)}
@@ -1734,7 +1730,7 @@ export default function Stock() {
       />
 
       {summary && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div className="grid-stats-sm" style={{ marginBottom: 16 }}>
           <MiniStat label="Active products" value={summary.count} />
           <MiniStat label="Stock value (cost)" value={formatCurrency(summary.costValue)} />
           <MiniStat label="Stock value (selling)" value={formatCurrency(summary.saleValue)} tone="accent" />
@@ -1742,27 +1738,31 @@ export default function Stock() {
           <MiniStat label="Out of stock" value={summary.outOfStock} tone={summary.outOfStock ? "danger" : undefined} />
         </div>
       )}
-      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-        <SearchInput value={search} onChange={handleSearch} placeholder="Search by name, barcode, brand or category…" style={{ width: 360, maxWidth: "100%" }} />
-        {[
-          ["", "All"],
-          ["low", "Low stock"],
-          ["out", "Out of stock"],
-          ["expiring", "Expiring soon"],
-          ["expired", "Expired"],
-        ].map(([v, l]) => (
-          <button
-            key={v || "all"}
-            className={status === v ? "btn-primary" : "btn-ghost"}
-            style={{ padding: "7px 12px" }}
-            onClick={() => {
-              setPage(1);
-              setStatus(v);
-            }}
-          >
-            {l}
-          </button>
-        ))}
+      {/* Search takes the row and the five filters scroll sideways rather than wrapping
+          into a three-line block of buttons on a phone. */}
+      <div className="row-wrap" style={{ marginBottom: 16 }}>
+        <SearchInput value={search} onChange={handleSearch} placeholder="Search by name, barcode, brand or category…" style={{ maxWidth: 360 }} className="grow" />
+        <div className="chip-row">
+          {[
+            ["", "All"],
+            ["low", "Low stock"],
+            ["out", "Out of stock"],
+            ["expiring", "Expiring soon"],
+            ["expired", "Expired"],
+          ].map(([v, l]) => (
+            <button
+              key={v || "all"}
+              className={status === v ? "btn-primary" : "btn-ghost"}
+              style={{ padding: "7px 12px" }}
+              onClick={() => {
+                setPage(1);
+                setStatus(v);
+              }}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="card" style={{ overflow: "hidden" }}>
@@ -1780,12 +1780,16 @@ export default function Stock() {
           />
         ) : (
           <>
-            <div className="table-scroll-wrapper" style={{ overflowX: "auto" }}>
+            {/* 10 columns: scrolls sideways on a tablet, and each row becomes a card on a
+                phone (.table-stack reads the data-label on every cell). The old build set
+                neither, so the columns just crushed together below ~900px. */}
+            <div className="table-scroll-wrapper table-stack">
               <table
                 style={{
                   width: "100%",
                   borderCollapse: "collapse",
                   fontSize: 13.5,
+                  minWidth: 1040,
                 }}
               >
                 <thead>
@@ -1861,6 +1865,7 @@ export default function Stock() {
                       >
                         {printMode && (
                           <td
+                            data-label="Copies"
                             style={{
                               padding: "13px 18px",
                               textAlign: "center",
@@ -1892,7 +1897,7 @@ export default function Stock() {
                             />
                           </td>
                         )}
-                        <td style={{ padding: "13px 18px" }}>
+                        <td data-primary="" style={{ padding: "13px 18px" }}>
                           <p
                             style={{
                               fontWeight: 500,
@@ -1920,6 +1925,7 @@ export default function Stock() {
                           )}
                         </td>
                         <td
+                          data-label="Barcode"
                           style={{
                             padding: "13px 18px",
                             color: "var(--text-muted)",
@@ -1930,6 +1936,7 @@ export default function Stock() {
                           {p.barcode || "—"}
                         </td>
                         <td
+                          data-label="Category"
                           style={{
                             padding: "13px 18px",
                             color: "var(--text-secondary)",
@@ -1938,6 +1945,7 @@ export default function Stock() {
                           {p.category || "—"}
                         </td>
                         <td
+                          data-label="Net qty"
                           style={{
                             padding: "13px 18px",
                             textAlign: "center",
@@ -1967,6 +1975,7 @@ export default function Stock() {
                           )}
                         </td>
                         <td
+                          data-label="MRP"
                           style={{
                             padding: "13px 18px",
                             textAlign: "right",
@@ -1990,6 +1999,7 @@ export default function Stock() {
                           )}
                         </td>
                         <td
+                          data-label="Price"
                           style={{
                             padding: "13px 18px",
                             textAlign: "right",
@@ -2001,6 +2011,7 @@ export default function Stock() {
                           {formatCurrency(p.price)}
                         </td>
                         <td
+                          data-label="Stock"
                           style={{
                             padding: "13px 18px",
                             textAlign: "right",
@@ -2016,6 +2027,7 @@ export default function Stock() {
                           {formatQty(p.quantity, p.unit)}
                         </td>
                         <td
+                          data-label="Expiry"
                           style={{ padding: "13px 18px", textAlign: "center" }}
                         >
                           {(() => {
@@ -2046,6 +2058,7 @@ export default function Stock() {
                           })()}
                         </td>
                         <td
+                          data-label="Status"
                           style={{ padding: "13px 18px", textAlign: "center" }}
                         >
                           <span
@@ -2057,6 +2070,7 @@ export default function Stock() {
                         </td>
                         {!printMode && (
                           <td
+                            data-actions=""
                             style={{
                               padding: "13px 18px",
                               textAlign: "center",

@@ -39,6 +39,12 @@ const updateStaff = asyncHandler(async (req, res) => {
   const b = req.body || {};
   const isSelf = user.id === req.user.id;
 
+  // A shop owner must never be able to take over the platform admin account that
+  // happens to live in the same shop (change its email/password/role).
+  if (user.isSuperAdmin && !isSelf && !req.isSuperAdmin) {
+    throw new HttpError(403, "The platform admin account cannot be edited from here");
+  }
+
   if (b.username !== undefined) user.username = str(b.username, 60) || user.username;
   if (b.phone !== undefined) user.phone = str(b.phone, 20);
   if (b.email !== undefined) {

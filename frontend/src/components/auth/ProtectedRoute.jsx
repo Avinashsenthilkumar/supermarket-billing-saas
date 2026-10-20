@@ -11,7 +11,7 @@ const ProtectedRoute = ({ children, roles, superAdmin = false }) => {
 
   if (loading)
     return (
-      <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100dvh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <PageLoader />
       </div>
     );

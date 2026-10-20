@@ -53,7 +53,7 @@ export default function Signup() {
 
   if (platform.allowSignup === false) {
     return (
-      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--bg)", padding: 24 }}>
+      <div style={{ minHeight: "100dvh", display: "grid", placeItems: "center", background: "var(--bg)", padding: 24 }}>
         <div className="card" style={{ padding: 32, maxWidth: 420, textAlign: "center" }}>
           <h1 style={{ fontSize: 24, marginBottom: 8 }}>Signups are closed</h1>
           <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
@@ -68,14 +68,13 @@ export default function Signup() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+    <div style={{ minHeight: "100dvh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: "clamp(0px, 3vw, 24px)" }}>
       <div
+        className="auth-card"
         style={{
           width: "100%",
           maxWidth: 1000,
           background: "var(--bg-card)",
-          borderRadius: 28,
-          boxShadow: "0 30px 80px rgba(60,48,25,0.14)",
           display: "flex",
           overflow: "hidden",
           border: "1px solid var(--border)",
@@ -106,9 +105,9 @@ export default function Signup() {
           <p style={{ fontSize: 12.5, color: "var(--text-muted)" }}>{platform.trialDays || 14}-day free trial · No card required</p>
         </div>
 
-        <div style={{ flex: 1, padding: "40px 44px" }}>
+        <div className="auth-form" style={{ flex: 1 }}>
           <div className="fade-in" style={{ maxWidth: 460, margin: "0 auto" }}>
-            <h1 style={{ fontFamily: "'Fraunces',serif", fontSize: 30, fontWeight: 500, color: "var(--text-primary)" }}>Create your store</h1>
+            <h1 style={{ fontFamily: "'Fraunces',serif", fontSize: "clamp(24px, 5.5vw, 30px)", fontWeight: 500, color: "var(--text-primary)" }}>Create your store</h1>
             <p style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 6, marginBottom: 26 }}>Takes less than a minute.</p>
 
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 15 }}>
@@ -123,12 +122,12 @@ export default function Signup() {
                   ))}
                 </select>
               </div>
-              <div className="form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="form-grid" style={{ gap: 12 }}>
                 {input("Your name", "username", "text", "Owner name")}
                 {input("Phone", "phone", "tel", "+91 …")}
               </div>
               {input("Email (login)", "email", "email", "you@store.com", { autoComplete: "email" })}
-              <div className="form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="form-grid" style={{ gap: 12 }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <label style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-secondary)" }}>Password</label>
                   <div style={{ position: "relative" }}>

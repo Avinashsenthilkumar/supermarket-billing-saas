@@ -233,7 +233,9 @@ export default function Settings() {
                 {form.logo ? <img src={form.logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <Store size={26} style={{ color: "var(--text-muted)" }} />}
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden onChange={(e) => onLogo(e.target.files[0])} />
+                {/* SVG is deliberately not offered: the logo is inlined into printed
+                    receipt HTML, and the server only accepts base64 rasters. */}
+                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => onLogo(e.target.files[0])} />
                 <button className="btn-ghost" onClick={() => fileRef.current?.click()}>
                   <Upload size={13} /> Upload logo
                 </button>
@@ -300,7 +302,7 @@ export default function Settings() {
       {tab === "appearance" && (
         <>
           <Section title="Theme" description="Changes preview instantly — click Save to keep them for everyone in your shop.">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+            <div className="grid-stats-sm" style={{ gap: 10 }}>
               {[
                 ["light", "Light", Sun],
                 ["dark", "Dark", Moon],

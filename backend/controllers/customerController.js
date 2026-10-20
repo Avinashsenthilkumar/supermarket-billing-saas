@@ -98,9 +98,15 @@ const updateCustomer = asyncHandler(async (req, res) => {
     const dup = await req.db.Customer.findOne({ where: { phone: data.phone, id: { [Op.ne]: customer.id } } });
     if (dup) throw new HttpError(409, `Phone already belongs to ${dup.name}`);
   }
+  const oldPhone = customer.phone;
   await customer.update(data);
-  // keep denormalised name/phone on bills in sync
-  await req.db.Bill.update({ customerName: customer.name, customerPhone: customer.phone }, { where: { customerId: customer.id } });
+
+  // A bill is a tax document: the name printed on it is the name at the time of sale and
+  // must not be rewritten later. Only the phone is kept in sync, and only when it
+  // actually changed, so dues collection and WhatsApp reminders still reach the customer.
+  if (data.phone !== oldPhone) {
+    await req.db.Bill.update({ customerPhone: customer.phone }, { where: { customerId: customer.id } });
+  }
   res.json({ success: true, message: "Customer updated", data: { customer } });
 });
 

@@ -60,7 +60,7 @@ export default function Suppliers() {
         }
       />
       {summary && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div className="grid-stats-sm" style={{ marginBottom: 16 }}>
           <MiniStat label="Suppliers" value={rows.length} />
           <MiniStat label="Total payable" value={formatCurrency(summary.totalPayable)} tone="danger" />
         </div>
@@ -85,17 +85,17 @@ export default function Suppliers() {
             <tbody>
               {filtered.map((s) => (
                 <tr key={s.id} className="table-row-hover">
-                  <Td>
+                  <Td primary>
                     <button onClick={() => openDetail(s)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--text-primary)", fontWeight: 600, fontSize: 13.5, textAlign: "left" }}>
                       {s.name}
                     </button>
                   </Td>
-                  <Td muted>{[s.contactPerson, s.phone].filter(Boolean).join(" · ") || "—"}</Td>
-                  <Td mono muted>
+                  <Td label="Contact" muted>{[s.contactPerson, s.phone].filter(Boolean).join(" · ") || "—"}</Td>
+                  <Td label="GSTIN" mono muted>
                     {s.gstNumber || "—"}
                   </Td>
-                  <Td align="right">{num(s.balance) > 0 ? <Pill tone="danger">{formatCurrency(s.balance)}</Pill> : <span style={{ color: "var(--text-muted)" }}>{formatCurrency(s.balance)}</span>}</Td>
-                  <Td align="center">
+                  <Td label="Payable" align="right">{num(s.balance) > 0 ? <Pill tone="danger">{formatCurrency(s.balance)}</Pill> : <span style={{ color: "var(--text-muted)" }}>{formatCurrency(s.balance)}</span>}</Td>
+                  <Td label="Actions" align="center">
                     <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
                       <button className="btn-ghost" style={{ padding: "5px 9px" }} title="Pay" onClick={() => setPayFor(s)}>
                         <Wallet size={13} />
@@ -147,7 +147,7 @@ export default function Suppliers() {
       <Modal isOpen={!!detail} onClose={() => setDetail(null)} title={detail?.supplier.name} maxWidth={680}>
         {detail && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }} className="form-grid">
+            <div className="form-grid-3" style={{ gap: 10 }}>
               <MiniStat label="Payable" value={formatCurrency(detail.supplier.balance)} tone={num(detail.supplier.balance) > 0 ? "danger" : undefined} />
               <MiniStat label="Purchases" value={detail.purchases.length} />
               <MiniStat label="Products supplied" value={detail.productCount} />
@@ -165,14 +165,14 @@ export default function Suppliers() {
               <tbody>
                 {detail.purchases.map((p) => (
                   <tr key={p.id}>
-                    <Td mono>
+                    <Td primary mono>
                       {p.purchaseNumber} {p.status === "cancelled" && <Pill tone="danger">cancelled</Pill>}
                     </Td>
-                    <Td muted>{formatDate(p.purchaseDate)}</Td>
-                    <Td align="right" mono>
+                    <Td label="Date" muted>{formatDate(p.purchaseDate)}</Td>
+                    <Td label="Total" align="right" mono>
                       {formatCurrency(p.totalAmount)}
                     </Td>
-                    <Td align="right" mono style={{ color: num(p.dueAmount) > 0 ? "var(--danger)" : undefined }}>
+                    <Td label="Due" align="right" mono style={{ color: num(p.dueAmount) > 0 ? "var(--danger)" : undefined }}>
                       {formatCurrency(p.dueAmount)}
                     </Td>
                   </tr>

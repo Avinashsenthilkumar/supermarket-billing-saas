@@ -18,6 +18,19 @@ const createBill = asyncHandler(async (req, res) => {
   const settings = await getShopSettings(db);
   const isCashier = req.user.role === "cashier" && !req.isSuperAdmin;
 
+  // ── Idempotency ────────────────────────────────────────────────────────────
+  // The till sends one clientRef per checkout attempt. If the same ref comes back —
+  // double click, lost response, offline retry — return the bill that already exists
+  // rather than selling the stock twice.
+  const clientRef = str(body.clientRef, 64);
+  if (clientRef) {
+    const existing = await db.Bill.findOne({ where: { clientRef } });
+    if (existing) {
+      const full = await db.Bill.findByPk(existing.id, { include: fullBillInclude(db) });
+      return res.status(200).json({ success: true, message: "Bill already saved", data: { bill: full }, duplicate: true });
+    }
+  }
+
   // merge duplicate product lines
   const rawItems = Array.isArray(body.items) ? body.items : [];
   if (!rawItems.length) throw new HttpError(400, "Bill must have at least one item");
@@ -55,7 +68,12 @@ const createBill = asyncHandler(async (req, res) => {
     // 2) Customer (by id or phone — created automatically when a phone is given)
     let customer = null;
     const phone = str(body.customerPhone, 20);
-    if (body.customerId) customer = await db.Customer.findByPk(body.customerId, { transaction: t, lock: t.LOCK.UPDATE });
+    if (body.customerId) {
+      customer = await db.Customer.findByPk(body.customerId, { transaction: t, lock: t.LOCK.UPDATE });
+      // A stale customer id (deleted on another till) must not silently become a walk-in
+      // sale — the loyalty points and the due would be posted nowhere.
+      if (!customer) throw new HttpError(404, "Selected customer no longer exists — search again");
+    }
     if (!customer && phone) {
       customer = await db.Customer.findOne({ where: { phone }, transaction: t, lock: t.LOCK.UPDATE });
       if (!customer) {
@@ -92,12 +110,23 @@ const createBill = asyncHandler(async (req, res) => {
       loyaltyDiscount = round2(redeemPoints * num(settings.loyaltyPointValue, 1));
     }
 
+    // ── Place of supply (GST) ────────────────────────────────────────────────
+    // Over-the-counter retail is intra-state, so CGST+SGST is the default. A bill
+    // raised against a GSTIN from another state is inter-state and carries IGST.
+    const customerGst = str(body.customerGstNumber, 20) || (customer ? customer.gstNumber : null);
+    const placeOfSupply = str(body.placeOfSupply, 60) || settings.state || null;
+    const homeState = String(settings.state || "").trim().toLowerCase();
+    const interState =
+      body.interState === true ||
+      (!!placeOfSupply && !!homeState && String(placeOfSupply).trim().toLowerCase() !== homeState);
+
     const calc = calculateBill(lines, {
       billDiscount,
       loyaltyDiscount,
       pricesIncludeTax: settings.pricesIncludeTax,
       taxEnabled: settings.taxEnabled,
       roundOff: settings.roundOff,
+      interState,
     });
     // If the loyalty discount was capped, only charge the points actually used
     if (loyaltyDiscount > 0 && calc.loyaltyDiscount < loyaltyDiscount) {
@@ -109,8 +138,18 @@ const createBill = asyncHandler(async (req, res) => {
     if (pay.due > 0) {
       if (!settings.allowCreditSale) throw new HttpError(400, "Credit (due) sales are disabled in settings");
       if (!customer && settings.requireCustomerForCredit) throw new HttpError(400, "Customer phone is required for a credit sale");
+      // Even with the setting off, a due needs *someone* to chase. A nameless, phoneless
+      // udhaar entry is money written off at the moment the bill is saved.
+      if (!customer && !phone) throw new HttpError(400, "A credit (due) sale needs at least a customer phone number");
       if (customer && Number(customer.creditLimit) > 0 && Number(customer.balance) + pay.due > Number(customer.creditLimit)) {
-        throw new HttpError(400, `Credit limit exceeded. Limit ₹${customer.creditLimit}, current due ₹${customer.balance}`);
+        const room = round2(Math.max(0, Number(customer.creditLimit) - Number(customer.balance)));
+        throw new HttpError(
+          400,
+          `Credit limit exceeded for ${customer.name}. Limit ${Number(customer.creditLimit).toFixed(2)}, already due ${Number(
+            customer.balance,
+          ).toFixed(2)} — only ${room.toFixed(2)} more can go on account.`,
+          "CREDIT_LIMIT",
+        );
       }
     }
 
@@ -124,6 +163,7 @@ const createBill = asyncHandler(async (req, res) => {
     const bill = await db.Bill.create(
       {
         billNumber,
+        clientRef,
         customerId: customer ? customer.id : null,
         customerName: customer ? customer.name : str(body.customerName, 120),
         customerPhone: customer ? customer.phone : phone,
@@ -135,6 +175,10 @@ const createBill = asyncHandler(async (req, res) => {
         taxAmount: calc.taxAmount,
         cgst: calc.cgst,
         sgst: calc.sgst,
+        igst: calc.igst,
+        interState: calc.interState,
+        placeOfSupply,
+        customerGstNumber: customerGst,
         roundOff: calc.roundOff,
         totalAmount: calc.totalAmount,
         paidAmount: pay.paid,
@@ -194,6 +238,15 @@ const createBill = asyncHandler(async (req, res) => {
     res.status(201).json({ success: true, message: "Bill created successfully", data: { bill: fullBill } });
   } catch (err) {
     if (!t.finished) await t.rollback();
+    // Two identical submits can both get past the pre-check above and race to insert.
+    // The unique index on client_ref stops the second one; hand back the winner's bill.
+    if (clientRef && err?.name === "SequelizeUniqueConstraintError") {
+      const existing = await db.Bill.findOne({ where: { clientRef } });
+      if (existing) {
+        const full = await db.Bill.findByPk(existing.id, { include: fullBillInclude(db) });
+        return res.status(200).json({ success: true, message: "Bill already saved", data: { bill: full }, duplicate: true });
+      }
+    }
     throw err;
   }
 });
@@ -204,7 +257,7 @@ const previewBill = asyncHandler(async (req, res) => {
   const settings = await getShopSettings(db);
   const items = Array.isArray(req.body?.items) ? req.body.items : [];
   const ids = items.map((i) => parseInt(i.productId, 10)).filter(Boolean);
-  const products = ids.length ? await db.Product.findAll({ where: { id: ids } }) : [];
+  const products = ids.length ? await db.Product.findAll({ where: { id: ids, isActive: true } }) : [];
   const byId = new Map(products.map((p) => [p.id, p]));
   const lines = items
     .filter((i) => byId.has(parseInt(i.productId, 10)))
@@ -339,6 +392,13 @@ const returnBill = asyncHandler(async (req, res) => {
     if (!bill) throw new HttpError(404, "Bill not found");
     if (!["completed", "partially_returned"].includes(bill.status)) throw new HttpError(400, "This bill cannot be returned");
 
+    // Checked up front: "adjust against dues" and "store credit" both need an account to
+    // post to. Finding this out after restocking and writing the return rows only worked
+    // because the transaction rolled back — but the cashier saw a confusing late error.
+    if (!bill.customerId && (refundMethod === "adjust_due" || refundMethod === "store_credit")) {
+      throw new HttpError(400, "This bill has no customer — refund in cash / UPI / card instead");
+    }
+
     const { next } = await nextSequence(db, "returnSeq", t);
     const returnNumber = `${settings.returnPrefix || "RET"}-${pad(next, 6)}`;
     let total = 0;
@@ -393,8 +453,6 @@ const returnBill = asyncHandler(async (req, res) => {
         customer.loyaltyPoints = round2(Math.max(0, Number(customer.loyaltyPoints) - pointsBack));
         await customer.save({ transaction: t });
       }
-    } else if (refundMethod === "adjust_due" || refundMethod === "store_credit") {
-      throw new HttpError(400, "This bill has no customer — refund in cash/UPI/card instead");
     }
 
     await t.commit();

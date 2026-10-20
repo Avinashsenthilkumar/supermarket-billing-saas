@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { Printer, Calculator } from "lucide-react";
 import { reportAPI } from "../../services/api";
 import { formatCurrency, getErrorMessage, todayStr, num, PAYMENT_LABELS, escapeHtml, formatDate } from "../../utils/helpers";
+import { printHtml } from "../../utils/receipt";
 import { useSettings } from "../../context/SettingsContext";
 import { Page, SectionHeader, PageLoader, MiniStat } from "../shared/UI";
 
@@ -38,15 +39,18 @@ export default function DayEnd() {
   const print = () => {
     if (!data) return;
     const row = (l, v) => `<tr><td>${escapeHtml(l)}</td><td style="text-align:right">${escapeHtml(v)}</td></tr>`;
-    const w = window.open("", "_blank", "width=420,height=640");
-    if (!w) return toast.error("Allow pop-ups to print");
-    w.document.write(`<html><head><title>Day closing ${data.date}</title><style>body{font-family:monospace;font-size:12px;width:76mm;margin:0 auto}table{width:100%}h2{text-align:center;font-family:Arial}hr{border:0;border-top:1px dashed #000}</style></head><body>
+    // Printed through a hidden iframe, so a pop-up blocker cannot silently swallow the
+    // day-closing slip the owner signs.
+    const ok = printHtml(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Day closing ${escapeHtml(data.date)}</title>
+      <style>@page{size:80mm auto;margin:4mm}body{font-family:'Courier New',monospace;font-size:12px;width:76mm;margin:0 auto}table{width:100%;border-collapse:collapse}h2{text-align:center;font-family:Arial,sans-serif;font-size:16px}hr{border:0;border-top:1px dashed #000;margin:6px 0}</style>
+      </head><body>
       <h2>${escapeHtml(settings.businessName)}</h2><div style="text-align:center">Day closing — ${escapeHtml(formatDate(data.date))}</div><hr>
       <table>${row("Bills", data.sales.bills)}${row("Net sales", formatCurrency(data.sales.revenue))}${row("Cancelled bills", data.cancelledBills)}</table><hr>
       <table>${data.payments.map((p) => row(PAYMENT_LABELS[p.method] || p.method, formatCurrency(p.amount))).join("")}</table><hr>
       <table>${row("Cash sales", formatCurrency(data.cash.sales))}${row("+ Dues collected (cash)", formatCurrency(data.cash.collected))}${row("− Expenses (cash)", formatCurrency(data.cash.expenses))}${row("− Refunds (cash)", formatCurrency(data.cash.refunds))}${row("− Paid to suppliers (cash)", formatCurrency(data.cash.suppliers))}${row("Expected in drawer", formatCurrency(expected))}${counted ? row("Counted", formatCurrency(counted)) + row("Difference", formatCurrency(diff)) : ""}</table><hr>
-      <div style="margin-top:30px">Signature: ____________</div><script>window.onload=function(){window.print()}<\/script></body></html>`);
-    w.document.close();
+      <div style="margin-top:30px">Signature: ____________</div>
+      </body></html>`);
+    if (!ok) toast.error("Could not open the print dialog");
   };
 
   return (
@@ -67,7 +71,7 @@ export default function DayEnd() {
         <PageLoader />
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 16 }}>
+          <div className="grid-stats-sm" style={{ marginBottom: 16 }}>
             <MiniStat label="Bills" value={data.sales.bills} />
             <MiniStat label="Net sales" value={formatCurrency(data.sales.revenue)} tone="accent" />
             <MiniStat label="Credit given" value={formatCurrency(data.sales.due)} tone="danger" />
@@ -75,8 +79,8 @@ export default function DayEnd() {
             <MiniStat label="Expenses" value={formatCurrency(data.expenses)} />
             <MiniStat label="Cancelled bills" value={data.cancelledBills} />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
-            <div className="card" style={{ padding: 20 }}>
+          <div className="grid-panels">
+            <div className="card" style={{ padding: 20, minWidth: 0 }}>
               <h3 style={{ fontSize: 17, marginBottom: 12 }}>Payments received</h3>
               {data.payments.length === 0 && <p style={{ fontSize: 13, color: "var(--text-muted)" }}>No sales on this day</p>}
               {data.payments.map((p) => (
@@ -109,26 +113,33 @@ export default function DayEnd() {
               <p style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 6 }}>Add your opening cash float to this amount.</p>
             </div>
 
-            <div className="card" style={{ padding: 20 }}>
+            <div className="card" style={{ padding: 20, minWidth: 0 }}>
               <h3 style={{ fontSize: 17, marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
                 <Calculator size={16} /> Count the drawer
               </h3>
               {DENOMS.map((d) => (
-                <div key={d} style={{ display: "grid", gridTemplateColumns: "70px 1fr 110px", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 500 }}>
+                // minmax(0,…) on the middle column so the number input can shrink on a
+                // narrow phone instead of pushing the line total off the card
+                <div
+                  key={d}
+                  style={{ display: "grid", gridTemplateColumns: "58px minmax(0, 1fr) 92px", alignItems: "center", gap: 8, marginBottom: 6 }}
+                >
+                  <span className="tabular" style={{ fontSize: 13.5, fontWeight: 500 }}>
                     {settings.currencySymbol}
                     {d}
                   </span>
                   <input
                     type="number"
                     min="0"
+                    inputMode="numeric"
                     className="input-field"
-                    style={{ padding: "6px 10px" }}
+                    style={{ padding: "6px 10px", textAlign: "center" }}
                     value={counts[d] || ""}
                     onChange={(e) => setCounts({ ...counts, [d]: e.target.value })}
                     placeholder="0"
+                    aria-label={`Number of ${settings.currencySymbol}${d} notes`}
                   />
-                  <span className="tabular" style={{ textAlign: "right", fontSize: 13, color: "var(--text-secondary)" }}>
+                  <span className="tabular truncate-1" style={{ textAlign: "right", fontSize: 13, color: "var(--text-secondary)" }}>
                     {formatCurrency(d * num(counts[d]))}
                   </span>
                 </div>

@@ -2,7 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Design tokens ──────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════════
+   Design tokens
+   ══════════════════════════════════════════════════════════════════════════════ */
 :root {
   /* Warm premium retail palette (light) — accent vars are overwritten at runtime from Settings */
   --bg: #f4f0e7;
@@ -37,6 +39,15 @@
   --sidebar-muted: rgba(255, 255, 255, 0.4);
   --sidebar-border: rgba(255, 255, 255, 0.06);
   --sidebar-hover: rgba(255, 255, 255, 0.05);
+
+  /* Layout rhythm — one place to change page padding at every breakpoint */
+  --page-pad-x: 36px;
+  --page-pad-y: 28px;
+  /* Room the fixed mobile menu button needs above page content */
+  --mobile-bar: 0px;
+  /* Height of the billing screen's mobile cart bar */
+  --cart-bar: 72px;
+
   color-scheme: light;
 }
 
@@ -74,6 +85,8 @@
   }
   html {
     font-size: 15px;
+    /* Stops iOS from inflating text in landscape */
+    -webkit-text-size-adjust: 100%;
   }
   body {
     transition: background-color 0.2s ease, color 0.2s ease;
@@ -82,6 +95,8 @@
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     line-height: 1.6;
+    /* Never let a wide table drag the whole page sideways */
+    overflow-x: hidden;
   }
   h1,
   h2,
@@ -90,6 +105,17 @@
     font-weight: 400;
     letter-spacing: -0.02em;
     line-height: 1.2;
+  }
+  /* Long product names, barcodes and emails must wrap instead of widening the layout */
+  h1,
+  h2,
+  h3,
+  p,
+  td,
+  th,
+  li,
+  span {
+    overflow-wrap: anywhere;
   }
   ::-webkit-scrollbar {
     width: 4px;
@@ -157,7 +183,7 @@
     gap: 6px;
     padding: 9px 18px;
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-contrast);
     font-size: 13px;
     font-weight: 500;
     border-radius: 10px;
@@ -169,7 +195,7 @@
   .btn-accent:hover {
     background: var(--accent-dark);
     transform: translateY(-1px);
-    box-shadow: 0 4px 16px rgba(193, 127, 58, 0.3);
+    box-shadow: 0 4px 16px rgba(var(--accent-rgb), 0.3);
   }
   .btn-accent:disabled {
     opacity: 0.4;
@@ -197,6 +223,10 @@
     color: var(--text-primary);
     border-color: var(--border-strong);
   }
+  .btn-ghost:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
 
   .btn-danger {
     display: inline-flex;
@@ -208,13 +238,17 @@
     font-size: 13px;
     font-weight: 500;
     border-radius: 10px;
-    border: 1px solid rgba(184, 64, 64, 0.2);
+    border: 1px solid rgba(176, 106, 90, 0.25);
     cursor: pointer;
     transition: all 0.18s ease;
     white-space: nowrap;
   }
   .btn-danger:hover {
     filter: brightness(0.96);
+  }
+  .btn-danger:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 
   .input-field {
@@ -226,17 +260,22 @@
     color: var(--text-primary);
     font-family: inherit;
     font-size: 13.5px;
-    transition:
-      border-color 0.15s,
-      box-shadow 0.15s;
+    transition: border-color 0.15s, box-shadow 0.15s;
     outline: none;
+    /* date/number inputs otherwise overflow their grid cell in Safari */
+    min-width: 0;
+    max-width: 100%;
   }
   .input-field::placeholder {
     color: var(--text-muted);
   }
   .input-field:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(193, 127, 58, 0.12);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.16);
+  }
+  .input-field:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .badge {
@@ -258,7 +297,436 @@
   }
 }
 
-/* Scanner */
+/* ══════════════════════════════════════════════════════════════════════════════
+   LAYOUT PRIMITIVES
+
+   These replace the old approach of matching inline style strings
+   (`[style*="gridTemplateColumns: …"]`). React writes inline styles to the DOM in
+   kebab-case, so every camelCase selector matched nothing and most of the
+   responsive rules were silently dead. Components now carry a class instead.
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Page shell ───────────────────────────────────────────────────────────── */
+.page-content {
+  padding: var(--page-pad-y) var(--page-pad-x) 40px;
+  padding-top: calc(var(--page-pad-y) + var(--mobile-bar));
+  width: 100%;
+  min-width: 0;
+}
+
+/* ── Grids ────────────────────────────────────────────────────────────────── */
+/* Stat strips: fill the row, never drop below a readable width */
+.grid-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+}
+.grid-stats-sm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  gap: 12px;
+}
+.grid-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+/* Fixed column counts that collapse in steps rather than squashing */
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+/* Content + sidebar (chart beside a list, form beside a summary) */
+.grid-main-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+}
+.grid-side-main {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 16px;
+}
+
+/* Form field grids — always safe to collapse to one column */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.form-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+/* Toolbars: search + filter chips + actions */
+.row-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.row-wrap > .grow {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+/* Filter chips that scroll horizontally instead of stacking into a tall block */
+.chip-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+.chip-row > * {
+  flex-shrink: 0;
+}
+
+/* Section headers: title left, actions right — wrapping cleanly when narrow */
+.section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 22px;
+}
+.section-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1100px) {
+  .grid-main-side,
+  .grid-side-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  :root {
+    --page-pad-x: 20px;
+    --page-pad-y: 20px;
+    /* The mobile menu button is fixed at the top-left; give content room for it */
+    --mobile-bar: 46px;
+  }
+  .grid-3,
+  .form-grid-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .section-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .section-head-actions {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  :root {
+    --page-pad-x: 14px;
+    --page-pad-y: 16px;
+  }
+  .grid-2,
+  .grid-3,
+  .grid-4,
+  .form-grid,
+  .form-grid-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .grid-stats {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+  }
+  .grid-stats-sm {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  /* A field that asked to span two columns has nothing to span any more */
+  .form-grid > *,
+  .form-grid-3 > * {
+    grid-column: span 1 !important;
+  }
+  .stat-card {
+    padding: 15px 16px;
+  }
+  .section-head-actions .btn-primary,
+  .section-head-actions .btn-ghost,
+  .section-head-actions .btn-accent {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   TABLES
+
+   Below the breakpoint each row becomes its own card: the th text is repeated on
+   every cell through data-label, so nothing has to be hidden to fit. The previous
+   approach hid columns 2 and 3 by nth-child, which silently dropped real data and
+   broke whenever a column was conditionally rendered.
+   ══════════════════════════════════════════════════════════════════════════════ */
+.table-scroll-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 760px) {
+  .table-stack {
+    overflow-x: visible;
+  }
+  .table-stack table {
+    min-width: 0 !important;
+    width: 100%;
+  }
+  .table-stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .table-stack tr {
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin: 0 0 10px;
+    background: var(--bg-card);
+  }
+  .table-stack tbody tr:last-child {
+    margin-bottom: 0;
+  }
+  .table-stack td {
+    display: flex !important;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    width: auto !important;
+    text-align: right !important;
+    padding: 5px 0 !important;
+    border: none !important;
+    min-height: 0;
+  }
+  .table-stack td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    text-align: left;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  /* The first cell is the row's heading — full width, no label */
+  .table-stack td[data-primary] {
+    display: block !important;
+    text-align: left !important;
+    padding: 0 0 6px !important;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border) !important;
+    font-weight: 500;
+  }
+  .table-stack td[data-primary]::before {
+    content: none;
+  }
+  /* A cell with no value adds nothing to a card — drop the whole row, not just its label */
+  .table-stack td[data-empty]:not([data-primary]):not([data-actions]) {
+    display: none !important;
+  }
+  .table-stack td[data-actions] {
+    justify-content: flex-end;
+    padding-top: 10px !important;
+    margin-top: 4px;
+    border-top: 1px solid var(--border) !important;
+  }
+  .table-stack td[data-actions]::before {
+    content: none;
+  }
+  /* Row striping/hover makes no sense once rows are cards */
+  .table-stack .table-row-hover:hover {
+    background: var(--bg-card);
+  }
+}
+
+.table-row-hover:hover {
+  background: var(--bg-sunken);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   BILLING (POS) SCREEN
+
+   Desktop: product panel on the left, cart docked right.
+   Mobile:  product panel full width with a summary bar pinned to the bottom; the
+            cart opens as a sheet over it. The old rule gave the cart a permanent
+            50vh even when empty, so half the phone was a blank panel.
+   ══════════════════════════════════════════════════════════════════════════════ */
+.billing-layout {
+  display: flex;
+  /* dvh tracks the visible viewport, so the mobile address bar cannot clip the
+     checkout button off the bottom of the screen the way 100vh does */
+  height: 100dvh;
+  overflow: hidden;
+}
+.billing-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--page-pad-y) 28px 28px;
+  padding-top: calc(var(--page-pad-y) + var(--mobile-bar));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.billing-cart {
+  width: 420px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  min-height: 0;
+}
+.billing-cart-close,
+.billing-bar {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .billing-cart {
+    width: 350px;
+  }
+}
+
+@media (max-width: 900px) {
+  .billing-layout {
+    display: block;
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+  .billing-main {
+    /* Leave room for the fixed summary bar */
+    padding-bottom: calc(var(--cart-bar) + 24px);
+  }
+
+  /* Cart becomes a bottom sheet, only present when opened */
+  .billing-cart {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-height: 86dvh;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -10px 44px rgba(0, 0, 0, 0.22);
+    z-index: 45;
+    transform: translateY(100%);
+    transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+    /* Respect the home-bar area on iOS */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .billing-cart.open {
+    transform: translateY(0);
+  }
+  .billing-cart-close {
+    display: flex;
+  }
+  .billing-cart-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 44;
+    background: var(--overlay);
+    backdrop-filter: blur(3px);
+  }
+
+  /* Pinned summary: item count + total + a button that opens the sheet */
+  .billing-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    min-height: var(--cart-bar);
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg-card);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+  }
+}
+
+@media (min-width: 901px) {
+  /* The sheet classes must never leak into the docked desktop cart */
+  .billing-cart {
+    transform: none !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Modals, scanner, misc
+   ══════════════════════════════════════════════════════════════════════════════ */
+.modal-shell {
+  width: 100%;
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  position: relative;
+}
+@media (max-width: 600px) {
+  .modal-overlay {
+    padding: 0 !important;
+    align-items: flex-end !important;
+  }
+  /* Full-height sheet on a phone: a centred dialog with a long form is unusable
+     once the on-screen keyboard takes half the viewport */
+  .modal-shell {
+    max-width: none !important;
+    max-height: 94dvh;
+    border-radius: 18px 18px 0 0 !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .modal-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--bg-card);
+  }
+}
+
 #qr-reader {
   width: 100% !important;
   border: none !important;
@@ -270,12 +738,56 @@
 }
 #qr-reader video {
   border-radius: 10px;
+  width: 100% !important;
+  height: auto !important;
 }
 #qr-reader__dashboard {
   background: transparent !important;
 }
 
-/* Animations */
+/* ── Sign-in / sign-up card ───────────────────────────────────────────────── */
+.auth-card {
+  min-height: 620px;
+  border-radius: 28px;
+  box-shadow: 0 30px 80px rgba(60, 48, 25, 0.14);
+}
+.auth-form {
+  padding: 48px 56px;
+}
+@media (max-width: 720px) {
+  /* On a phone the card is the page: no rounded floating panel, no forced height,
+     and the generous desktop padding becomes a thin gutter. */
+  .auth-card {
+    min-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
+  .auth-form {
+    padding: 32px 20px calc(32px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Barcode label sheet: reflows on screen so the preview is usable on a tablet, but is
+   pinned back to 4-up for printing so it still lines up with A4 sticker stock. */
+.label-sheet {
+  grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+}
+@media print {
+  .label-sheet {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+}
+
+/* Recharts: let the container shrink instead of forcing the page wider */
+.recharts-wrapper,
+.recharts-surface {
+  max-width: 100%;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Animation
+   ══════════════════════════════════════════════════════════════════════════════ */
 @keyframes fadeUp {
   from {
     opacity: 0;
@@ -305,6 +817,19 @@
     transform: scale(0.8);
   }
 }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: none;
+  }
+}
 
 .fade-in {
   animation: fadeUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -314,6 +839,9 @@
 }
 .pulse-dot {
   animation: pulse-dot 1.4s ease-in-out infinite;
+}
+.slide-down {
+  animation: slideDown 0.2s ease both;
 }
 
 .stagger > *:nth-child(1) {
@@ -329,225 +857,36 @@
   animation-delay: 180ms;
 }
 
-/* ══════════════════════════════════════════════
-   RESPONSIVE — Mobile first breakpoints
-   ══════════════════════════════════════════════ */
-
-/* ── Layout ─────────────────────────────────── */
-@media (max-width: 768px) {
-  /* Main content gets top padding for hamburger button */
-  main {
-    padding-top: 0 !important;
+/* ══════════════════════════════════════════════════════════════════════════════
+   Touch & input ergonomics
+   ══════════════════════════════════════════════════════════════════════════════ */
+@media (hover: none) and (pointer: coarse) {
+  /* 44px is the smallest comfortable touch target */
+  button,
+  [role="button"],
+  select.input-field {
+    min-height: 40px;
   }
-  main > div {
-    padding-top: 56px !important;
-  }
-
-  /* Page padding — tighter on mobile */
-  [style*="padding: 32px 36px"],
-  [style*="padding: 28px 32px"],
-  [style*="padding: 30px 36px"],
-  [style*="padding: 24px 32px"] {
-    padding: 16px !important;
-  }
-
-  /* Dashboard stats — 2 col on mobile */
-  [style*="gridTemplateColumns: repeat(auto-fit, minmax(200px"] {
-    grid-template-columns: 1fr 1fr !important;
-    gap: 10px !important;
-  }
-
-  /* Dashboard chart + low stock — stack vertically */
-  [style*="gridTemplateColumns: 1fr 300px"] {
-    grid-template-columns: 1fr !important;
-  }
-
-  /* Stock table — horizontally scrollable */
-  .table-scroll-wrapper {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    border-radius: 14px;
-  }
-
-  /* Buttons — smaller padding */
   .btn-primary,
   .btn-ghost,
   .btn-accent,
   .btn-danger {
-    padding: 8px 13px !important;
-    font-size: 12px !important;
+    padding: 10px 16px;
   }
-
-  /* Modal — full screen on mobile */
-  [class*="modal-overlay"] > div,
-  div[style*="maxWidth"] {
-    width: 95vw !important;
-    max-width: 95vw !important;
-    margin: 10px auto !important;
-  }
-}
-
-@media (max-width: 480px) {
-  /* Dashboard stats — single col on very small */
-  [style*="gridTemplateColumns: repeat(auto-fit, minmax(200px"] {
-    grid-template-columns: 1fr !important;
-  }
-  html {
-    font-size: 14px;
-  }
-}
-
-/* ── Billing page ───────────────────────────── */
-@media (max-width: 900px) {
-  /* Billing: stack scanner + cart vertically */
-  .billing-layout {
-    flex-direction: column !important;
-    height: auto !important;
-    overflow: visible !important;
-  }
-  .billing-main {
-    overflow-y: visible !important;
-    padding: 70px 16px 16px !important;
-  }
-  .billing-cart {
-    width: 100% !important;
-    border-left: none !important;
-    border-top: 1px solid var(--border) !important;
-    max-height: 480px;
-  }
-}
-
-/* ── Stock page ─────────────────────────────── */
-@media (max-width: 768px) {
-  /* Stock header buttons — wrap */
-  .stock-header-actions {
-    flex-wrap: wrap !important;
-    gap: 8px !important;
-  }
-  /* Stock search bar — full width */
-  .stock-search {
-    width: 100% !important;
-  }
-  /* Stock table — hide less important columns */
-  .stock-table th:nth-child(2),
-  .stock-table td:nth-child(2),
-  .stock-table th:nth-child(3),
-  .stock-table td:nth-child(3) {
-    display: none;
-  }
-}
-
-/* ── Reports page ───────────────────────────── */
-@media (max-width: 768px) {
-  [style*="gridTemplateColumns: 1fr 1fr"] {
-    grid-template-columns: 1fr !important;
-  }
-}
-
-/* ── Transaction table ──────────────────────── */
-@media (max-width: 768px) {
-  .transactions-table th:nth-child(3),
-  .transactions-table td:nth-child(3),
-  .transactions-table th:nth-child(4),
-  .transactions-table td:nth-child(4) {
-    display: none;
-  }
-}
-
-/* ── ScanModal ──────────────────────────────── */
-@media (max-width: 768px) {
-  /* Scan modal full width */
-  div[style*="maxWidth: 700"] {
-    max-width: 98vw !important;
-    width: 98vw !important;
-  }
-}
-
-/* ── Bottom nav for mobile (billing) ───────── */
-@media (max-width: 900px) {
-  .mobile-cart-fab {
-    display: flex !important;
-  }
-}
-.mobile-cart-fab {
-  display: none;
-}
-
-/* ── Page content responsive padding ───────── */
-@media (max-width: 768px) {
-  .page-content {
-    padding: 72px 14px 20px !important;
-  }
-  /* Stock/Transactions page wrapper */
-  .stock-page,
-  .transactions-page {
-    padding: 72px 14px 20px !important;
-  }
-}
-
-/* ── Stat cards on small screens ────────────── */
-@media (max-width: 640px) {
-  .stat-card {
-    padding: 16px 16px !important;
-  }
-  .stat-card svg {
-    width: 14px !important;
-    height: 14px !important;
-  }
-}
-
-/* ── Modal responsive ───────────────────────── */
-@media (max-width: 600px) {
-  /* Make modals take full width minus small margin */
-  div[role="dialog"] > div,
-  .modal-content {
-    width: 96vw !important;
-    max-width: 96vw !important;
-    padding: 18px !important;
-  }
-  /* Two-col form grids → single col */
-  div[style*="gridTemplateColumns: 1fr 1fr"],
-  div[style*="gridTemplateColumns: '1fr 1fr'"] {
-    grid-template-columns: 1fr !important;
-  }
-}
-
-/* ── Billing mobile — cart as bottom sheet ─── */
-@media (max-width: 900px) {
-  .billing-cart {
-    position: fixed !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    height: 50vh !important;
-    border-radius: 20px 20px 0 0 !important;
-    box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.15) !important;
-    z-index: 30;
-    width: 100% !important;
-  }
-  .billing-main {
-    padding-bottom: calc(50vh + 20px) !important;
-  }
-  .billing-layout {
-    height: auto !important;
-    min-height: 100vh !important;
-  }
-}
-
-/* ── Touch friendly buttons on mobile ───────── */
-@media (max-width: 768px) {
-  button {
-    min-height: 36px;
-  }
-  .input-field {
+  /* 16px stops iOS Safari zooming in when a field is focused */
+  .input-field,
+  input,
+  select,
+  textarea {
     font-size: 16px !important;
-  } /* prevents iOS zoom */
+  }
+  /* Hover-only affordances would stay stuck "on" after a tap */
+  .btn-primary:hover,
+  .btn-accent:hover {
+    transform: none;
+  }
 }
 
-/* ── Theme helpers ──────────────────────────── */
-.table-row-hover:hover {
-  background: var(--bg-sunken);
-}
 select.input-field {
   appearance: auto;
 }
@@ -555,25 +894,45 @@ input[type="date"].input-field,
 input[type="month"].input-field {
   color-scheme: inherit;
 }
+/* Number spinners steal width in narrow cells and are useless for money entry */
+input[type="number"].input-field::-webkit-outer-spin-button,
+input[type="number"].input-field::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"].input-field {
+  -moz-appearance: textfield;
+}
+
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
 .compact .card,
 .compact .stat-card {
   border-radius: 10px;
 }
 .compact .page-content {
-  padding: 20px 24px !important;
+  padding: 20px var(--page-pad-x) 28px;
+  padding-top: calc(20px + var(--mobile-bar));
 }
+.compact .stat-card {
+  padding: 16px 18px;
+}
+
 .tabular {
   font-variant-numeric: tabular-nums;
 }
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+.truncate-1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Accessibility & print
+   ══════════════════════════════════════════════════════════════════════════════ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -582,35 +941,34 @@ input[type="month"].input-field {
     transition-duration: 0.01ms !important;
   }
 }
-@media print {
-  aside,
-  .no-print {
-    display: none !important;
-  }
-}
-@media (max-width: 640px) {
-  .form-grid {
-    grid-template-columns: 1fr !important;
-  }
-  .form-grid > * {
-    grid-column: span 1 !important;
-  }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-/* React writes inline styles in kebab-case, so target those forms on small screens */
-@media (max-width: 900px) {
-  [style*="grid-template-columns: 1fr 320px"],
-  [style*="grid-template-columns: 1fr 300px"],
-  .report-grid {
-    grid-template-columns: 1fr !important;
+@media print {
+  aside,
+  .no-print,
+  .billing-bar,
+  .billing-cart-backdrop {
+    display: none !important;
   }
-}
-@media (max-width: 768px) {
-  [style*="padding: 28px 36px"] {
-    padding: 64px 14px 20px !important;
+  .page-content {
+    padding: 0 !important;
   }
-  [style*="grid-template-columns: repeat(4, 1fr)"],
-  [style*="grid-template-columns: repeat(3, 1fr)"] {
-    grid-template-columns: 1fr 1fr !important;
+  .card {
+    box-shadow: none !important;
+    border-color: #ddd !important;
+  }
+  body {
+    background: #fff !important;
   }
 }

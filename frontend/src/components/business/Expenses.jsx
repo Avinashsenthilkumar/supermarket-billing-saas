@@ -100,7 +100,7 @@ export default function Expenses() {
         </select>
       </div>
       {summary && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div className="grid-stats-sm" style={{ marginBottom: 16 }}>
           <MiniStat label="Total" value={formatCurrency(summary.totalAmount)} tone="danger" />
           {summary.byCategory.slice(0, 5).map((c) => (
             <MiniStat key={c.category} label={c.category} value={formatCurrency(c.total)} />
@@ -128,14 +128,14 @@ export default function Expenses() {
               <tbody>
                 {rows.map((e) => (
                   <tr key={e.id}>
-                    <Td muted>{formatDate(e.expenseDate)}</Td>
-                    <Td style={{ fontWeight: 500 }}>{e.category}</Td>
-                    <Td muted>{[e.paidTo, e.reference, e.notes].filter(Boolean).join(" · ") || "—"}</Td>
-                    <Td>{String(e.paymentMethod).toUpperCase()}</Td>
-                    <Td align="right" mono>
+                    <Td primary muted>{formatDate(e.expenseDate)}</Td>
+                    <Td label="Category" style={{ fontWeight: 500 }}>{e.category}</Td>
+                    <Td label="Paid to / notes" muted>{[e.paidTo, e.reference, e.notes].filter(Boolean).join(" · ") || "—"}</Td>
+                    <Td label="Method">{String(e.paymentMethod).toUpperCase()}</Td>
+                    <Td label="Amount" align="right" mono>
                       {formatCurrency(e.amount)}
                     </Td>
-                    <Td align="center">
+                    <Td actions align="center">
                       <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
                         <button className="btn-ghost" style={{ padding: "4px 8px" }} onClick={() => open(e)} aria-label="Edit">
                           <Edit2 size={13} />

@@ -74,7 +74,7 @@ export default function Customers() {
         }
       />
       {summary && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div className="grid-stats-sm" style={{ marginBottom: 16 }}>
           <MiniStat label="Total customers" value={total} />
           <MiniStat label="Pending dues (to collect)" value={formatCurrency(summary.totalDue)} tone="danger" />
           <MiniStat label="Lifetime sales" value={formatCurrency(summary.totalSpent)} />
@@ -123,23 +123,23 @@ export default function Customers() {
               <tbody>
                 {rows.map((c) => (
                   <tr key={c.id} className="table-row-hover" style={{ cursor: "pointer" }} onClick={() => navigate(`/customers/${c.id}`)}>
-                    <Td>
+                    <Td primary>
                       <p style={{ fontWeight: 500 }}>{c.name}</p>
                       <p style={{ fontSize: 12, color: "var(--text-muted)" }}>{c.phone}</p>
                     </Td>
-                    <Td align="right" mono>
+                    <Td label="Bills" align="right" mono>
                       {c.totalBills}
                     </Td>
-                    <Td align="right" mono>
+                    <Td label="Total spent" align="right" mono>
                       {formatCurrency(c.totalSpent)}
                     </Td>
-                    <Td align="right">
+                    <Td label="Due" align="right">
                       {num(c.balance) > 0 ? <Pill tone="danger">{formatCurrency(c.balance)}</Pill> : num(c.balance) < 0 ? <Pill tone="success">Adv {formatCurrency(-num(c.balance))}</Pill> : "—"}
                     </Td>
-                    <Td align="right" mono>
+                    <Td label="Points" align="right" mono>
                       {num(c.loyaltyPoints)}
                     </Td>
-                    <Td muted>{c.lastPurchaseAt ? formatDate(c.lastPurchaseAt) : "—"}</Td>
+                    <Td label="Last purchase" muted>{c.lastPurchaseAt ? formatDate(c.lastPurchaseAt) : "—"}</Td>
                   </tr>
                 ))}
               </tbody>

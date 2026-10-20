@@ -8,7 +8,10 @@ const PAYMENT_METHODS = ["cash", "upi", "card", "credit", "wallet", "cheque", "o
  * lines: [{ price, quantity, discount, taxRate }]
  * returns per-line amounts + totals
  */
-const calculateBill = (lines, { billDiscount = 0, loyaltyDiscount = 0, pricesIncludeTax = true, taxEnabled = true, roundOff = true }) => {
+const calculateBill = (
+  lines,
+  { billDiscount = 0, loyaltyDiscount = 0, pricesIncludeTax = true, taxEnabled = true, roundOff = true, interState = false },
+) => {
   const computed = lines.map((l) => {
     const gross = round2(num(l.price) * num(l.quantity));
     const discount = round2(Math.min(Math.max(0, num(l.discount)), gross));
@@ -23,6 +26,9 @@ const calculateBill = (lines, { billDiscount = 0, loyaltyDiscount = 0, pricesInc
   const extra = round2(billDisc + loyaltyDisc);
 
   // Spread bill-level discounts over lines proportionally (keeps GST correct)
+  // Give the whole bill-level discount out, even when the proportional share of the last
+  // line would not cover the remainder (tiny last line, big discount): any shortfall is
+  // pushed onto the lines that still have room, so Σ finalNet always equals netSum − extra.
   let allocated = 0;
   computed.forEach((l, i) => {
     let share;
@@ -30,7 +36,24 @@ const calculateBill = (lines, { billDiscount = 0, loyaltyDiscount = 0, pricesInc
     else share = netSum > 0 ? round2((extra * l.net) / netSum) : 0;
     share = Math.min(share, l.net);
     allocated = round2(allocated + share);
+    l.share = share;
     l.finalNet = round2(l.net - share);
+  });
+  let shortfall = round2(extra - allocated);
+  if (shortfall > 0) {
+    for (const l of computed) {
+      if (shortfall <= 0) break;
+      const room = round2(l.finalNet);
+      if (room <= 0) continue;
+      const take = Math.min(room, shortfall);
+      l.share = round2(l.share + take);
+      l.finalNet = round2(l.finalNet - take);
+      shortfall = round2(shortfall - take);
+    }
+    allocated = round2(extra - shortfall);
+  }
+
+  computed.forEach((l) => {
     const rate = taxEnabled ? Math.max(0, num(l.taxRate)) / 100 : 0;
     if (pricesIncludeTax) {
       l.taxable = round2(l.finalNet / (1 + rate));
@@ -47,7 +70,8 @@ const calculateBill = (lines, { billDiscount = 0, loyaltyDiscount = 0, pricesInc
   const taxAmount = round2(computed.reduce((a, l) => a + l.tax, 0));
   const rawTotal = round2(computed.reduce((a, l) => a + l.total, 0));
   const totalAmount = roundOff ? Math.round(rawTotal) : rawTotal;
-  const cgst = round2(taxAmount / 2);
+  // Place of supply decides the split: same state → CGST + SGST, other state → IGST only.
+  const cgst = interState ? 0 : round2(taxAmount / 2);
   return {
     lines: computed,
     subtotal,
@@ -57,7 +81,9 @@ const calculateBill = (lines, { billDiscount = 0, loyaltyDiscount = 0, pricesInc
     taxableAmount,
     taxAmount,
     cgst,
-    sgst: round2(taxAmount - cgst),
+    sgst: interState ? 0 : round2(taxAmount - cgst),
+    igst: interState ? taxAmount : 0,
+    interState: !!interState,
     roundOff: round2(totalAmount - rawTotal),
     totalAmount: round2(totalAmount),
   };
@@ -76,7 +102,12 @@ const settlePayments = (total, body, settings) => {
     payments = [{ method, amount: total, reference: str(body.paymentReference, 80) }];
   }
 
-  const creditPart = round2(payments.filter((p) => p.method === "credit").reduce((a, p) => a + p.amount, 0));
+  // Did the till actually ask for a credit (udhaar) sale? Either an explicit credit line,
+  // paymentMethod=credit, or the acceptDue flag the checkout screen sets when the cashier
+  // confirms "put the rest on the customer's account".
+  const creditRequested =
+    payments.some((p) => p.method === "credit") || body.paymentMethod === "credit" || body.acceptDue === true;
+
   const tendered = round2(payments.filter((p) => p.method !== "credit").reduce((a, p) => a + p.amount, 0));
   const cashTendered = round2(payments.filter((p) => p.method === "cash").reduce((a, p) => a + p.amount, 0));
 
@@ -97,11 +128,19 @@ const settlePayments = (total, body, settings) => {
     payments = payments.filter((p) => p.amount > 0 || p.method !== "cash");
   }
   const due = round2(Math.max(0, total - paid));
-  if (creditPart > 0 && due <= 0) {
-    // credit entered but fully paid by other methods — drop credit line
-    payments = payments.filter((p) => p.method !== "credit");
+
+  // A shortfall that nobody asked for is a mistyped amount, not a loan. Without this the
+  // till would quietly book the difference as udhaar and the cashier would never know.
+  if (due > 0.001 && !creditRequested) {
+    throw new HttpError(
+      400,
+      `Short by ${due.toFixed(2)} — collect the full amount, or confirm it as a credit (due) sale.`,
+      "SHORT_PAYMENT",
+    );
   }
-  // Record the real credit amount (what is actually outstanding)
+
+  // Record the real credit amount (what is actually outstanding), replacing whatever
+  // credit figure was sent: only the remainder after the other methods is a real debt.
   payments = payments.filter((p) => p.method !== "credit");
   if (due > 0) payments.push({ method: "credit", amount: due, reference: null });
 

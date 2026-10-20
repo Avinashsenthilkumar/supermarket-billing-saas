@@ -34,10 +34,15 @@ services:
       DB_PASSWORD: rootpassword
       DB_NAME: supermart_master
       TENANT_DB_PREFIX: sm_shop_
-      JWT_SECRET: change_this_super_secret_key_in_production
+      # Local-only default so `docker compose up` works out of the box. Override it in a
+      # .env file before exposing this to a network — the server refuses to start in
+      # production if it still looks like an example value.
+      JWT_SECRET: ${JWT_SECRET:-local_dev_only_jwt_secret_change_me_0123456789abcdef}
       JWT_EXPIRES_IN: 7d
-      ADMIN_EMAIL: admin@supermarket.com
-      ADMIN_PASSWORD: admin123
+      # nginx sits in front, so read the client IP from X-Forwarded-For
+      TRUST_PROXY: "true"
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@supermarket.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
     ports:
       - "5000:5000"
 

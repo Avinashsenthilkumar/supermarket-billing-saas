@@ -1,0 +1,23 @@
+{
+  "short_name": "SuperMart",
+  "name": "SuperMart POS — Billing & Inventory",
+  "description": "Point of sale, GST invoices, stock, customers and reports for supermarkets.",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any maskable" },
+    { "src": "icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any maskable" }
+  ],
+  "start_url": "/billing",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#bf9c5a",
+  "background_color": "#f4f0e7",
+  "categories": ["business", "productivity", "finance"],
+  "shortcuts": [
+    { "name": "New bill", "url": "/billing", "description": "Open the till" },
+    { "name": "Dashboard", "url": "/dashboard", "description": "Today's sales" },
+    { "name": "Stock", "url": "/stock", "description": "Products and inventory" },
+    { "name": "Day closing", "url": "/day-end", "description": "Count the cash drawer" }
+  ]
+}

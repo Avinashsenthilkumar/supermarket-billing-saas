@@ -74,7 +74,7 @@ export default function Staff() {
           </button>
         }
       />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12, marginBottom: 16 }}>
+      <div className="grid-stats" style={{ marginBottom: 16 }}>
         {Object.entries(PERMS).map(([r, d]) => (
           <div key={r} className="card" style={{ padding: "12px 16px" }}>
             <p style={{ fontWeight: 600, fontSize: 13.5 }}>{ROLE_LABELS[r]}</p>
@@ -102,15 +102,15 @@ export default function Staff() {
             <tbody>
               {rows.map((u) => (
                 <tr key={u.id}>
-                  <Td style={{ fontWeight: 500 }}>
+                  <Td primary style={{ fontWeight: 500 }}>
                     {u.username} {u.id === user?.id && <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>(you)</span>}
                     {u.phone && <div style={{ fontSize: 11.5, color: "var(--text-muted)", fontWeight: 400 }}>{u.phone}</div>}
                   </Td>
-                  <Td muted>{u.email}</Td>
-                  <Td>{u.isSuperAdmin ? "Platform admin" : ROLE_LABELS[u.role]}</Td>
-                  <Td muted>{u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "Never"}</Td>
-                  <Td align="center">{u.isActive ? <Pill tone="success">Active</Pill> : <Pill tone="danger">Disabled</Pill>}</Td>
-                  <Td align="center">
+                  <Td label="Email (login)" muted>{u.email}</Td>
+                  <Td label="Role">{u.isSuperAdmin ? "Platform admin" : ROLE_LABELS[u.role]}</Td>
+                  <Td label="Last login" muted>{u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "Never"}</Td>
+                  <Td label="Status" align="center">{u.isActive ? <Pill tone="success">Active</Pill> : <Pill tone="danger">Disabled</Pill>}</Td>
+                  <Td actions align="center">
                     <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
                       <button className="btn-ghost" style={{ padding: "4px 8px" }} onClick={() => open(u)} aria-label="Edit">
                         <Edit2 size={13} />

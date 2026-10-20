@@ -66,7 +66,7 @@ export default function Purchases() {
         }
       />
       {summary && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div className="grid-stats-sm" style={{ marginBottom: 16 }}>
           <MiniStat label="Purchase value (filtered)" value={formatCurrency(summary.totalAmount)} />
           <MiniStat label="Unpaid" value={formatCurrency(summary.dueAmount)} tone="danger" />
         </div>
@@ -108,22 +108,22 @@ export default function Purchases() {
               <tbody>
                 {rows.map((p) => (
                   <tr key={p.id} className="table-row-hover" style={{ cursor: "pointer" }} onClick={() => setView(p)}>
-                    <Td mono>
+                    <Td primary mono>
                       {p.purchaseNumber}
                       {p.invoiceNo && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Inv {p.invoiceNo}</div>}
                     </Td>
-                    <Td muted>{formatDate(p.purchaseDate)}</Td>
-                    <Td>{p.supplierName || "—"}</Td>
-                    <Td align="right" mono>
+                    <Td label="Date" muted>{formatDate(p.purchaseDate)}</Td>
+                    <Td label="Supplier">{p.supplierName || "—"}</Td>
+                    <Td label="Items" align="right" mono>
                       {p.items?.length || 0}
                     </Td>
-                    <Td align="right" mono>
+                    <Td label="Total" align="right" mono>
                       {formatCurrency(p.totalAmount)}
                     </Td>
-                    <Td align="right" mono style={{ color: num(p.dueAmount) > 0 ? "var(--danger)" : "var(--text-muted)" }}>
+                    <Td label="Due" align="right" mono style={{ color: num(p.dueAmount) > 0 ? "var(--danger)" : "var(--text-muted)" }}>
                       {num(p.dueAmount) > 0 ? formatCurrency(p.dueAmount) : "Paid"}
                     </Td>
-                    <Td align="center">{p.status === "cancelled" ? <Pill tone="danger">Cancelled</Pill> : <Pill tone="success">Received</Pill>}</Td>
+                    <Td label="Status" align="center">{p.status === "cancelled" ? <Pill tone="danger">Cancelled</Pill> : <Pill tone="success">Received</Pill>}</Td>
                   </tr>
                 ))}
               </tbody>
@@ -163,20 +163,20 @@ export default function Purchases() {
               <tbody>
                 {view.items?.map((it) => (
                   <tr key={it.id}>
-                    <Td>
+                    <Td primary>
                       {it.productName}
                       <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{[it.batchNo && `Batch ${it.batchNo}`, it.expiryDate && `Exp ${formatDate(it.expiryDate)}`].filter(Boolean).join(" · ")}</div>
                     </Td>
-                    <Td align="right" mono>
+                    <Td label="Qty" align="right" mono>
                       {formatQty(it.quantity)}
                     </Td>
-                    <Td align="right" mono>
+                    <Td label="Cost" align="right" mono>
                       {formatCurrency(it.costPrice)}
                     </Td>
-                    <Td align="right" mono>
+                    <Td label="GST" align="right" mono>
                       {num(it.taxRate)}%
                     </Td>
-                    <Td align="right" mono>
+                    <Td label="Amount" align="right" mono>
                       {formatCurrency(it.totalAmount)}
                     </Td>
                   </tr>
@@ -417,7 +417,7 @@ function PurchaseForm({ isOpen, onClose, onSaved, suppliers }) {
         </table>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16, marginTop: 16 }} className="report-grid">
+      <div className="grid-main-side" style={{ marginTop: 16 }}>
         <div>
           <Grid cols={2}>
             <Field label="Other charges (freight etc.)">

@@ -1,0 +1,12 @@
+# Never copy secrets or a host build into the image
+.env
+.env.*
+!.env.example
+node_modules
+npm-debug.log*
+*.log
+.git
+.gitignore
+Dockerfile
+.dockerignore
+tests

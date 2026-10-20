@@ -95,13 +95,13 @@ function Overview({ stats, shops, onOpen }) {
     .slice(0, 8);
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 16 }}>
+      <div className="grid-stats" style={{ marginBottom: 16 }}>
         <StatCard icon={Store} label="Businesses" value={stats.totalShops} sub={`${stats.activeShops} active · ${stats.expiredShops} expired`} />
         <StatCard icon={Users} label="User logins" value={stats.totalUsers} sub={`${stats.totalCustomers} customers across shops`} />
         <StatCard icon={Package} label="Products" value={stats.totalProducts.toLocaleString()} sub="All shops" />
         <StatCard icon={Receipt} label="Bills" value={stats.totalBills.toLocaleString()} sub={formatCurrency(stats.totalRevenue)} />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
+      <div className="grid-stats-sm" style={{ marginBottom: 20 }}>
         {Object.entries(stats.plans || {}).map(([k, p]) => (
           <MiniStat key={k} label={`${p.label} plan`} value={stats.byPlan?.[k] || 0} />
         ))}
@@ -147,16 +147,16 @@ function ShopTable({ shops, onOpen, compact }) {
         <tbody>
           {shops.map((s) => (
             <tr key={s.id} className="table-row-hover" style={{ cursor: "pointer" }} onClick={() => onOpen(s.id)}>
-              <Td>
+              <Td primary>
                 <p style={{ fontWeight: 600 }}>{s.name}</p>
                 <p style={{ fontSize: 11.5, color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace" }}>{s.dbName}</p>
               </Td>
-              <Td muted>
+              <Td label="Owner" muted>
                 {s.ownerEmail}
                 {s.phone && <div style={{ fontSize: 11.5 }}>{s.phone}</div>}
               </Td>
-              <Td>{s.planLabel}</Td>
-              <Td muted>
+              <Td label="Plan">{s.planLabel}</Td>
+              <Td label="Valid till" muted>
                 {s.subscriptionEnds ? formatDate(s.subscriptionEnds) : "Lifetime"}
                 {s.daysLeft !== null && (
                   <div style={{ fontSize: 11.5, color: s.daysLeft < 0 ? "var(--danger)" : s.daysLeft <= 7 ? "var(--accent-dark)" : "var(--text-muted)" }}>
@@ -164,17 +164,17 @@ function ShopTable({ shops, onOpen, compact }) {
                   </div>
                 )}
               </Td>
-              <Td align="right" mono>
+              <Td label="Users" align="right" mono>
                 {s.users}
               </Td>
-              <Td align="right" mono>
+              <Td label="Products" align="right" mono>
                 {s.products}
               </Td>
-              <Td align="right" mono>
+              <Td label="Sales" align="right" mono>
                 {formatCurrency(s.revenue)}
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{s.bills} bills</div>
               </Td>
-              <Td align="center">
+              <Td label="Status" align="center">
                 {!s.dbOk ? (
                   <Pill tone="danger">DB error</Pill>
                 ) : !s.isActive ? (
@@ -332,7 +332,7 @@ function ShopModal({ shopId, onClose, onChanged, plans }) {
         <PageLoader />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }} className="form-grid">
+          <div className="grid-4" style={{ gap: 10 }}>
             <MiniStat label="Products" value={s.products} />
             <MiniStat label="Bills" value={s.bills} />
             <MiniStat label="Customers" value={s.customers} />
@@ -558,17 +558,17 @@ function PlatformSettings() {
           <tbody>
             {Object.entries(form.plans).map(([k, p]) => (
               <tr key={k}>
-                <Td mono>{k}</Td>
-                <Td>
+                <Td primary mono>{k}</Td>
+                <Td label="Label">
                   <input className="input-field" value={p.label} onChange={(e) => setPlan(k, "label", e.target.value)} />
                 </Td>
-                <Td>
+                <Td label="Price / month">
                   <input className="input-field" type="number" min={0} value={p.price} onChange={(e) => setPlan(k, "price", e.target.value)} />
                 </Td>
-                <Td>
+                <Td label="Max users">
                   <input className="input-field" type="number" min={0} value={p.maxUsers} onChange={(e) => setPlan(k, "maxUsers", e.target.value)} />
                 </Td>
-                <Td>
+                <Td label="Max products">
                   <input className="input-field" type="number" min={0} value={p.maxProducts} onChange={(e) => setPlan(k, "maxProducts", e.target.value)} />
                 </Td>
               </tr>

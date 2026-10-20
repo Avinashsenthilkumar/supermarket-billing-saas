@@ -3,6 +3,14 @@ import { escapeHtml as e, num, formatQty } from "./helpers";
 
 const money = (v, sym) => `${sym}${num(v).toFixed(2)}`;
 
+// The logo is a data URL that goes straight into src="…". The server only accepts strict
+// base64 rasters, but a value stored by an older build could still contain a quote and
+// break out of the attribute, so it is re-checked here before being printed.
+const safeLogo = (logo) => {
+  const s = String(logo || "").trim();
+  return /^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(s) ? s : "";
+};
+
 export const buildReceiptHtml = (bill, s = {}) => {
   const sym = s.currencySymbol || "₹";
   const width = s.receiptFormat === "thermal58" ? "58mm" : s.receiptFormat === "a4" ? "190mm" : "80mm";
@@ -47,7 +55,7 @@ export const buildReceiptHtml = (bill, s = {}) => {
   img { max-width: 60px; max-height: 60px; display: block; margin: 0 auto 4px; }
   .muted { font-size: ${fs - 1}px; }
 </style></head><body>
-  ${s.showLogoOnReceipt && s.logo ? `<img src="${s.logo}" alt="">` : ""}
+  ${s.showLogoOnReceipt && safeLogo(s.logo) ? `<img src="${safeLogo(s.logo)}" alt="">` : ""}
   <h1>${e(s.businessName || "Invoice")}</h1>
   ${s.receiptHeader ? `<div class="c">${e(s.receiptHeader)}</div>` : ""}
   ${addr ? `<div class="c muted">${e(addr)}</div>` : ""}
@@ -59,6 +67,8 @@ export const buildReceiptHtml = (bill, s = {}) => {
   <table>
     ${line(`Bill: <b>${e(bill.billNumber)}</b>`, e(date))}
     ${bill.customerName || bill.customerPhone ? line(`Customer: ${e(bill.customerName || "-")}`, e(bill.customerPhone || "")) : ""}
+    ${bill.customerGstNumber ? line(`Customer GSTIN: ${e(bill.customerGstNumber)}`, "") : ""}
+    ${bill.interState && bill.placeOfSupply ? line(`Place of supply: ${e(bill.placeOfSupply)}`, "") : ""}
     ${s.showCashierOnReceipt && bill.cashierName ? line(`Cashier: ${e(bill.cashierName)}`, "") : ""}
   </table>
   <div class="hr"></div>
@@ -71,7 +81,10 @@ export const buildReceiptHtml = (bill, s = {}) => {
     ${num(bill.discountAmount) > 0 ? line("Bill discount", "-" + money(bill.discountAmount, sym)) : ""}
     ${num(bill.loyaltyDiscount) > 0 ? line(`Points redeemed (${num(bill.loyaltyRedeemed)})`, "-" + money(bill.loyaltyDiscount, sym)) : ""}
     ${num(bill.taxAmount) > 0 && s.showTaxBreakupOnReceipt
-      ? line("Taxable value", money(bill.taxableAmount, sym)) + line("CGST", money(bill.cgst, sym)) + line("SGST", money(bill.sgst, sym))
+      ? line("Taxable value", money(bill.taxableAmount, sym)) +
+        (bill.interState
+          ? line("IGST", money(bill.igst ?? bill.taxAmount, sym))
+          : line("CGST", money(bill.cgst, sym)) + line("SGST", money(bill.sgst, sym)))
       : num(bill.taxAmount) > 0 ? line(`${e(s.taxLabel || "GST")}${bill.pricesIncludeTax ? " (incl.)" : ""}`, money(bill.taxAmount, sym)) : ""}
     ${num(bill.roundOff) !== 0 ? line("Round off", money(bill.roundOff, sym)) : ""}
   </table>
@@ -89,15 +102,107 @@ export const buildReceiptHtml = (bill, s = {}) => {
   <div class="hr"></div>
   ${s.receiptFooter ? `<div class="c b">${e(s.receiptFooter)}</div>` : ""}
   ${s.termsAndConditions ? `<div class="c muted" style="margin-top:3px">${e(s.termsAndConditions)}</div>` : ""}
-  <script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();};};<\/script>
 </body></html>`;
 };
 
+/**
+ * Print through a hidden iframe rather than a pop-up window.
+ *
+ * A pop-up is blocked whenever the print is not a direct result of a click — which is
+ * exactly the case for "auto print after sale" — and the blocked window is silent, so the
+ * cashier hands over goods believing a receipt printed. An iframe is same-document, so it
+ * is never blocked and never steals focus from the barcode field.
+ */
 export const printReceipt = (bill, settings) => {
-  const win = window.open("", "_blank", "width=420,height=640");
-  if (!win) return false;
-  win.document.open();
-  win.document.write(buildReceiptHtml(bill, settings));
-  win.document.close();
-  return true;
+  if (!bill) return false;
+  const html = buildReceiptHtml(bill, settings);
+  try {
+    // Remove a frame left behind by a print dialog the user cancelled.
+    document.getElementById("receipt-print-frame")?.remove();
+
+    const frame = document.createElement("iframe");
+    frame.id = "receipt-print-frame";
+    frame.setAttribute("aria-hidden", "true");
+    frame.style.cssText = "position:fixed;width:0;height:0;border:0;left:-9999px;top:-9999px;";
+    document.body.appendChild(frame);
+
+    const doc = frame.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    const fire = () => {
+      try {
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+      } catch {
+        /* dialog refused — the frame is cleaned up below either way */
+      }
+      // Keep the frame alive long enough for the dialog; some browsers print
+      // asynchronously and tear-down too early produces a blank page.
+      setTimeout(() => frame.remove(), 60000);
+    };
+
+    // Wait for the logo image to decode, otherwise the first print can omit it.
+    if (doc.images.length) {
+      let left = doc.images.length;
+      let fired = false;
+      const done = () => {
+        left -= 1;
+        if (left <= 0 && !fired) {
+          fired = true;
+          fire();
+        }
+      };
+      Array.from(doc.images).forEach((img) => {
+        if (img.complete) done();
+        else {
+          img.addEventListener("load", done);
+          img.addEventListener("error", done);
+        }
+      });
+      // Never hang on a broken image.
+      setTimeout(() => {
+        if (!fired) {
+          fired = true;
+          fire();
+        }
+      }, 1200);
+    } else {
+      setTimeout(fire, 120);
+    }
+    return true;
+  } catch (err) {
+    console.error("[SuperMart] print failed:", err);
+    return false;
+  }
+};
+
+/** Same mechanism for any other printable document (day closing, barcode labels). */
+export const printHtml = (html) => {
+  try {
+    document.getElementById("doc-print-frame")?.remove();
+    const frame = document.createElement("iframe");
+    frame.id = "doc-print-frame";
+    frame.setAttribute("aria-hidden", "true");
+    frame.style.cssText = "position:fixed;width:0;height:0;border:0;left:-9999px;top:-9999px;";
+    document.body.appendChild(frame);
+    const doc = frame.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+    setTimeout(() => {
+      try {
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+      } catch {
+        /* ignore */
+      }
+      setTimeout(() => frame.remove(), 60000);
+    }, 150);
+    return true;
+  } catch (err) {
+    console.error("[SuperMart] print failed:", err);
+    return false;
+  }
 };

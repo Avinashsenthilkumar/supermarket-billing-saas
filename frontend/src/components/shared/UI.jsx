@@ -74,20 +74,60 @@ export const EmptyState = ({ icon: Icon, title, description, action }) => (
   </div>
 );
 
+// Open dialogs, innermost last. Escape must close only the top one, so a confirm dialog
+// over a form does not dismiss the form underneath it too.
+const modalStack = [];
+
 export const Modal = ({ isOpen, onClose, title, children, maxWidth = 480 }) => {
+  const shellRef = React.useRef(null);
+  const id = React.useRef({});
+
   React.useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) return undefined;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    modalStack.push(id.current);
+
+    // Escape closes the dialog, and Tab is trapped inside it — otherwise focus walks
+    // onto the page behind, which on the billing screen means typing into the barcode
+    // field while a modal is open.
+    const onKeyDown = (e) => {
+      // Only the topmost dialog reacts
+      if (modalStack[modalStack.length - 1] !== id.current) return;
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose?.();
+        return;
+      }
+      if (e.key !== "Tab" || !shellRef.current) return;
+      const focusable = shellRef.current.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown, true);
     return () => {
       document.body.style.overflow = prev;
+      document.removeEventListener("keydown", onKeyDown, true);
+      const at = modalStack.indexOf(id.current);
+      if (at !== -1) modalStack.splice(at, 1);
     };
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
   return ReactDOM.createPortal(
     <div
+      className="modal-overlay"
       style={{
         position: "fixed",
         inset: 0,
@@ -106,23 +146,25 @@ export const Modal = ({ isOpen, onClose, title, children, maxWidth = 480 }) => {
       }}
     >
       <div
-        className="card fade-in"
+        ref={shellRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={typeof title === "string" ? title : undefined}
+        className="card fade-in modal-shell"
         style={{
-          width: "100%",
           maxWidth,
-          maxHeight: "calc(100vh - 48px)",
-          overflowY: "auto",
           boxShadow: "0 24px 80px rgba(0,0,0,0.25)",
-          position: "relative",
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
+          className="modal-head"
           style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "20px 24px 16px",
+            gap: 12,
+            padding: "18px 22px 14px",
             borderBottom: "1px solid var(--border)",
           }}
         >
@@ -138,16 +180,18 @@ export const Modal = ({ isOpen, onClose, title, children, maxWidth = 480 }) => {
           </h3>
           <button
             onClick={onClose}
+            aria-label="Close"
             style={{
               background: "none",
               border: "none",
               cursor: "pointer",
               color: "var(--text-muted)",
-              padding: 4,
+              padding: 6,
               borderRadius: 6,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              flexShrink: 0,
               transition: "color 0.15s ease",
             }}
             onMouseEnter={(e) =>
@@ -169,7 +213,7 @@ export const Modal = ({ isOpen, onClose, title, children, maxWidth = 480 }) => {
             </svg>
           </button>
         </div>
-        <div style={{ padding: "20px 24px" }}>{children}</div>
+        <div style={{ padding: "18px 22px 22px" }}>{children}</div>
       </div>
     </div>,
     document.body,
@@ -302,8 +346,9 @@ export const SearchInput = ({
   onChange,
   placeholder = "Search…",
   style = {},
+  className = "",
 }) => (
-  <div style={{ position: "relative", ...style }}>
+  <div className={className} style={{ position: "relative", ...style }}>
     <Search
       size={14}
       style={{
@@ -327,21 +372,12 @@ export const SearchInput = ({
 );
 
 export const SectionHeader = ({ title, subtitle, actions }) => (
-  <div
-    style={{
-      display: "flex",
-      alignItems: "flex-end",
-      justifyContent: "space-between",
-      paddingBottom: 20,
-      borderBottom: "1px solid var(--border)",
-      marginBottom: 24,
-    }}
-  >
-    <div>
+  <div className="section-head">
+    <div style={{ minWidth: 0 }}>
       <h1
         style={{
           fontFamily: "'Fraunces','Playfair Display',serif",
-          fontSize: 26,
+          fontSize: "clamp(21px, 4.5vw, 26px)",
           fontWeight: 300,
           color: "var(--text-primary)",
           letterSpacing: "-0.02em",
@@ -355,17 +391,13 @@ export const SectionHeader = ({ title, subtitle, actions }) => (
         </p>
       )}
     </div>
-    {actions && (
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }} className="stock-header-actions">
-        {actions}
-      </div>
-    )}
+    {actions && <div className="section-head-actions">{actions}</div>}
   </div>
 );
 
 // ── Additional building blocks ───────────────────────────────────────────────
-export const Page = ({ children, maxWidth = 1280 }) => (
-  <div style={{ padding: "28px 36px", maxWidth }} className="fade-in page-content">
+export const Page = ({ children, maxWidth = 1280, className = "" }) => (
+  <div style={{ maxWidth, margin: "0 auto" }} className={`fade-in page-content ${className}`.trim()}>
     {children}
   </div>
 );
@@ -475,8 +507,30 @@ export const Th = ({ children, align = "left", style = {} }) => (
   </th>
 );
 
-export const Td = ({ children, align = "left", mono = false, muted = false, style = {}, ...rest }) => (
+/**
+ * A table cell.
+ *
+ * `label` is what the column is called; on a phone the row collapses into a card and
+ * that label is printed beside the value (see `.table-stack` in index.css), so no
+ * column has to be hidden to make the table fit. `primary` marks the cell that acts
+ * as the card's heading, `actions` the trailing button cell.
+ */
+export const Td = ({
+  children,
+  align = "left",
+  mono = false,
+  muted = false,
+  label,
+  primary = false,
+  actions = false,
+  style = {},
+  ...rest
+}) => (
   <td
+    data-label={label}
+    data-primary={primary ? "" : undefined}
+    data-actions={actions ? "" : undefined}
+    data-empty={children === null || children === undefined || children === "" ? "" : undefined}
     style={{
       textAlign: align,
       padding: "12px 16px",
@@ -493,8 +547,13 @@ export const Td = ({ children, align = "left", mono = false, muted = false, styl
   </td>
 );
 
-export const Table = ({ children, minWidth = 640 }) => (
-  <div className="table-scroll-wrapper" style={{ overflowX: "auto" }}>
+/**
+ * `stack` (default) turns rows into cards below 760px. Pass `stack={false}` for tables
+ * that only read correctly as a grid — a GST slab table, for instance — and they keep
+ * scrolling horizontally instead.
+ */
+export const Table = ({ children, minWidth = 640, stack = true }) => (
+  <div className={`table-scroll-wrapper${stack ? " table-stack" : ""}`}>
     <table style={{ width: "100%", borderCollapse: "collapse", minWidth }}>{children}</table>
   </div>
 );
@@ -508,7 +567,8 @@ export const Field = ({ label, children, hint, required, span = 1 }) => (
 );
 
 export const Grid = ({ cols = 2, gap = 12, children, style = {} }) => (
-  <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap, ...style }} className="form-grid">
+  // The class carries the responsive collapse; the inline gap is the only override.
+  <div className={cols >= 3 ? "form-grid-3" : "form-grid"} style={{ gap, ...style }}>
     {children}
   </div>
 );

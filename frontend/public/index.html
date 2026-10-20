@@ -2,13 +2,60 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- viewport-fit=cover lets the layout use the safe-area insets on notched tablets -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Supermarket billing &amp; inventory — point of sale, GST invoices, stock, customers and reports." />
     <title>SuperMart — Billing System</title>
+
+    <!-- Matches the light/dark palette so the browser chrome does not flash white -->
+    <meta name="theme-color" content="#f4f0e7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#15130f" media="(prefers-color-scheme: dark)" />
+
+    <!-- Installable on a counter tablet, and runs full-screen like a native till -->
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="SuperMart" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" sizes="any" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/icon-192.png" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+      /* Paint the stored theme before React mounts so the till does not flash the wrong
+         colour scheme on every reload. Mirrors applyTheme() in src/utils/theme.js. */
+      html { background: #f4f0e7; }
+      html[data-theme="dark"] { background: #15130f; }
+    </style>
+    <script>
+      (function () {
+        try {
+          var t = JSON.parse(localStorage.getItem("theme") || "null");
+          var mode = t && t.themeMode;
+          if (mode === "system" || !mode) {
+            mode = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
+          document.documentElement.setAttribute("data-theme", mode === "dark" ? "dark" : "light");
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      })();
+    </script>
   </head>
   <body>
+    <noscript>
+      <div style="font-family: system-ui, sans-serif; max-width: 460px; margin: 15vh auto; padding: 24px; text-align: center">
+        <h1 style="font-size: 20px">JavaScript is switched off</h1>
+        <p style="font-size: 14px; line-height: 1.6; color: #555">
+          This billing system needs JavaScript to run. Please enable it in your browser settings and reload the page.
+        </p>
+      </div>
+    </noscript>
     <div id="root"></div>
   </body>
 </html>

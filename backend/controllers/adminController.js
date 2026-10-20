@@ -204,6 +204,11 @@ const loginAs = asyncHandler(async (req, res) => {
   if (!shop) throw new HttpError(404, "Shop not found");
   const owner = await User.findOne({ where: { shopId: shop.id, role: "owner", isActive: true }, order: [["id", "ASC"]] });
   if (!owner) throw new HttpError(404, "No active owner for this shop");
+  // Support access to someone else's books is the most sensitive action on the platform —
+  // always leave a trace of who opened which shop and when.
+  console.warn(
+    `[AUDIT] ${new Date().toISOString()} support login: ${req.user.email} (user #${req.user.id}) opened shop #${shop.id} "${shop.name}" as ${owner.email}`,
+  );
   res.json({
     success: true,
     data: { token: signToken(owner), user: owner.toSafeJSON(), shop: shopPayload(shop, platform) },

@@ -26,17 +26,27 @@ const resolveRange = (q, settings) => {
 const sql = (req, query, replacements) => req.tenant.sequelize.query(query, { replacements, type: QueryTypes.SELECT });
 
 const billTotals = async (req, start, end) => {
+  // Revenue is net of returns, so the tax figure has to be net of returns too — summing
+  // the full bill.tax_amount next to a net revenue made the two columns disagree and the
+  // GST tab and the sales tab report different output tax for the same period.
   const [row] = await sql(
     req,
     `SELECT COUNT(*) AS bills,
             COALESCE(SUM(b.total_amount - b.returned_amount),0) AS revenue,
-            COALESCE(SUM(b.tax_amount),0) AS tax,
             COALESCE(SUM(b.item_discount + b.discount_amount + b.loyalty_discount),0) AS discount,
             COALESCE(SUM(b.due_amount),0) AS due,
             COALESCE(SUM(b.returned_amount),0) AS returns
        FROM bills b WHERE ${ACTIVE} AND b.createdAt BETWEEN :start AND :end`,
     { start, end },
   );
+  const [taxRow] = await sql(
+    req,
+    `SELECT COALESCE(SUM(${NET_TAX}),0) AS tax
+       FROM bill_items bi JOIN bills b ON b.id = bi.bill_id
+      WHERE ${ACTIVE} AND b.createdAt BETWEEN :start AND :end`,
+    { start, end },
+  );
+  row.tax = taxRow ? taxRow.tax : 0;
   return {
     bills: Number(row.bills) || 0,
     revenue: round2(row.revenue),
@@ -118,7 +128,7 @@ const getDashboard = asyncHandler(async (req, res) => {
     last7Days.push({ date, count: r ? Number(r.c) : 0, revenue: r ? round2(r.r) : 0 });
   }
 
-  const [lowStock, expiring, recentBills, totalProducts, receivable, payable, monthExpenses, todayPayments, topToday] = await Promise.all([
+  const [lowStock, expiring, recentBills, totalProducts, receivable, payable, monthExpenses, todayPayments, topToday, stockCounts] = await Promise.all([
     db.Product.findAll({
       where: { isActive: true, [Op.and]: [literal("`Product`.`quantity` <= `Product`.`reorder_level`")] },
       order: [["quantity", "ASC"]],
@@ -145,7 +155,21 @@ const getDashboard = asyncHandler(async (req, res) => {
         GROUP BY bi.product_id, bi.product_name ORDER BY amount DESC LIMIT 5`,
       { start: today.start, end: today.end },
     ),
+    // The lowStock/expiring lists above are capped at 10 rows for display, so the real
+    // counts have to be queried separately — otherwise the dashboard can never show
+    // more than "10 low" however bad the shelves actually are.
+    sql(
+      req,
+      `SELECT
+         COALESCE(SUM(CASE WHEN quantity > 0 AND quantity <= reorder_level THEN 1 ELSE 0 END),0) AS lowCount,
+         COALESCE(SUM(CASE WHEN quantity <= 0 THEN 1 ELSE 0 END),0) AS outCount,
+         COALESCE(SUM(CASE WHEN expiry_date IS NOT NULL AND expiry_date <= :expiryLimit AND quantity > 0 THEN 1 ELSE 0 END),0) AS expiringCount,
+         COALESCE(SUM(GREATEST(quantity,0) * cost_price),0) AS stockValue
+       FROM products WHERE is_active = 1`,
+      { expiryLimit },
+    ),
   ]);
+  const counts = stockCounts[0] || {};
 
   const cashier = req.user.role === "cashier" && !req.isSuperAdmin;
   const hide = (v) => (cashier ? null : v);
@@ -165,6 +189,12 @@ const getDashboard = asyncHandler(async (req, res) => {
       last7Days,
       lowStock,
       expiring,
+      counts: {
+        lowStock: Number(counts.lowCount) || 0,
+        outOfStock: Number(counts.outCount) || 0,
+        expiring: Number(counts.expiringCount) || 0,
+        stockValue: hide(round2(counts.stockValue)),
+      },
       todayDate: todayStr,
       recentBills,
       totalProducts,
@@ -287,9 +317,11 @@ const getGstReport = asyncHandler(async (req, res) => {
   const [slabs, hsn] = await Promise.all([
     sql(
       req,
-      `SELECT bi.tax_rate AS rate, SUM(${NET_TAXABLE}) AS taxable, SUM(${NET_TAX}) AS tax, SUM(${NET_AMT}) AS total
+      `SELECT bi.tax_rate AS rate, b.inter_state AS interState,
+              SUM(${NET_TAXABLE}) AS taxable, SUM(${NET_TAX}) AS tax, SUM(${NET_AMT}) AS total
          FROM bill_items bi JOIN bills b ON b.id = bi.bill_id
-        WHERE ${ACTIVE} AND b.createdAt BETWEEN :start AND :end GROUP BY bi.tax_rate ORDER BY bi.tax_rate`,
+        WHERE ${ACTIVE} AND b.createdAt BETWEEN :start AND :end
+        GROUP BY bi.tax_rate, b.inter_state ORDER BY bi.tax_rate`,
       { start, end },
     ),
     sql(
@@ -301,9 +333,21 @@ const getGstReport = asyncHandler(async (req, res) => {
     ),
   ]);
   const purchaseTax = await req.db.Purchase.sum("taxAmount", { where: { status: "completed", purchaseDate: { [Op.between]: [from, to] } } });
+  // Intra-state rows split the tax into CGST + SGST; inter-state rows are all IGST.
   const rows = slabs.map((s) => {
     const tax = round2(s.tax);
-    return { rate: Number(s.rate), taxable: round2(s.taxable), cgst: round2(tax / 2), sgst: round2(tax - round2(tax / 2)), tax, total: round2(s.total) };
+    const inter = !!Number(s.interState);
+    const half = inter ? 0 : round2(tax / 2);
+    return {
+      rate: Number(s.rate),
+      interState: inter,
+      taxable: round2(s.taxable),
+      cgst: half,
+      sgst: inter ? 0 : round2(tax - half),
+      igst: inter ? tax : 0,
+      tax,
+      total: round2(s.total),
+    };
   });
   const totalTax = round2(rows.reduce((a, r) => a + r.tax, 0));
   res.json({
@@ -311,10 +355,14 @@ const getGstReport = asyncHandler(async (req, res) => {
     data: {
       range: { from, to },
       gstNumber: settings.gstNumber,
+      state: settings.state || null,
       slabs: rows,
       hsn: hsn.map((h) => ({ hsn: h.hsn, rate: Number(h.rate), qty: round3(h.qty), taxable: round2(h.taxable), tax: round2(h.tax) })),
       totals: {
         taxable: round2(rows.reduce((a, r) => a + r.taxable, 0)),
+        cgst: round2(rows.reduce((a, r) => a + r.cgst, 0)),
+        sgst: round2(rows.reduce((a, r) => a + r.sgst, 0)),
+        igst: round2(rows.reduce((a, r) => a + r.igst, 0)),
         outputTax: totalTax,
         inputTax: round2(purchaseTax),
         netPayable: round2(totalTax - (Number(purchaseTax) || 0)),

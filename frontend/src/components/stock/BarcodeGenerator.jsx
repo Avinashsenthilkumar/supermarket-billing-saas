@@ -334,7 +334,7 @@ export default function BarcodeGenerator() {
 
   return (
     <div
-      style={{ padding: "28px 32px", maxWidth: 1280 }}
+      style={{ maxWidth: 1280, margin: "0 auto" }}
       className="fade-in page-content"
     >
       <style>{`
@@ -394,14 +394,7 @@ export default function BarcodeGenerator() {
         </div>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "380px 1fr",
-          gap: 24,
-          alignItems: "start",
-        }}
-      >
+      <div className="grid-side-main" style={{ gap: 24, alignItems: "start" }}>
         {/* Form */}
         <div
           className="card no-print"
@@ -475,9 +468,7 @@ export default function BarcodeGenerator() {
             </div>
           ))}
 
-          <div
-            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
-          >
+          <div className="form-grid" style={{ gap: 10 }}>
             {[
               { label: "MRP (₹)", key: "mrp", placeholder: "150" },
               { label: "SELL PRICE (₹) *", key: "price", placeholder: "100" },
@@ -675,11 +666,8 @@ export default function BarcodeGenerator() {
               </div>
               <div
                 id="label-print-area"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(4, 1fr)",
-                  gap: 12,
-                }}
+                className="label-sheet"
+                style={{ display: "grid", gap: 12 }}
               >
                 {labels.map((label, i) => (
                   <LabelCard

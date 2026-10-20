@@ -51,8 +51,29 @@ export default function Dashboard() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 60000);
-    return () => clearInterval(t);
+    // Only poll while the dashboard is actually on screen. A till left open on another
+    // tab overnight was otherwise making a full report query every minute.
+    let t = null;
+    const start = () => {
+      if (!t) t = setInterval(load, 60000);
+    };
+    const stop = () => {
+      if (t) clearInterval(t);
+      t = null;
+    };
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else {
+        load();
+        start();
+      }
+    };
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [load]);
 
   if (loading) return <PageLoader />;
@@ -67,15 +88,17 @@ export default function Dashboard() {
   const sym = currencySymbol();
 
   return (
-    <div style={{ padding: "28px 36px", maxWidth: 1320 }} className="fade-in page-content">
-      <div style={{ marginBottom: 24, paddingBottom: 18, borderBottom: "1px solid var(--border)", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <h1 style={{ fontFamily: "'Fraunces','Playfair Display',serif", fontSize: 28, fontWeight: 300, color: "var(--text-primary)" }}>Dashboard</h1>
+    <div style={{ maxWidth: 1320, margin: "0 auto" }} className="fade-in page-content">
+      <div className="section-head">
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ fontFamily: "'Fraunces','Playfair Display',serif", fontSize: "clamp(22px, 5vw, 28px)", fontWeight: 300, color: "var(--text-primary)" }}>
+            Dashboard
+          </h1>
           <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
             {new Date().toLocaleDateString(settings.locale || "en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
           </p>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="section-head-actions">
           <button className="btn-ghost" onClick={load}>
             <RefreshCw size={13} /> Refresh
           </button>
@@ -85,7 +108,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="stagger" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 16 }}>
+      <div className="stagger grid-stats" style={{ marginBottom: 16 }}>
         <StatCard
           icon={IndianRupee}
           label="Today's sales"
@@ -100,11 +123,19 @@ export default function Dashboard() {
           accentColor="#3a7a5a"
         />
         <StatCard icon={Users} label="Customer dues" value={formatCurrency(data.receivable)} sub="To collect (credit sales)" accentColor="#b06a5a" />
-        <StatCard icon={Package} label="Active products" value={data.totalProducts.toLocaleString()} sub={`${data.lowStock.length} low / out of stock`} accentColor="#3a5a7a" />
+        <StatCard
+          icon={Package}
+          label="Active products"
+          value={data.totalProducts.toLocaleString()}
+          // The list below is capped at 10 rows for display, so the real counts come
+          // from the server rather than from lowStock.length.
+          sub={`${num(data.counts?.lowStock)} low · ${num(data.counts?.outOfStock)} out of stock`}
+          accentColor="#3a5a7a"
+        />
       </div>
 
       {data.canSeeProfit && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 20 }}>
+        <div className="grid-stats-sm" style={{ marginBottom: 20 }}>
           {[
             ["Today's gross profit", formatCurrency(data.today.profit)],
             ["Avg bill today", formatCurrency(data.today.avgBill)],
@@ -122,8 +153,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16, marginBottom: 16 }}>
-        <div className="card fade-in" style={{ padding: "20px 22px" }}>
+      <div className="grid-main-side" style={{ marginBottom: 16 }}>
+        <div className="card fade-in" style={{ padding: "20px 22px", minWidth: 0 }}>
           <p style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 16 }}>Sales — last 7 days</p>
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
@@ -174,8 +205,12 @@ export default function Dashboard() {
         </Panel>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, marginBottom: 16 }}>
-        <Panel title="Low stock" icon={AlertTriangle} action={<Link to="/stock" style={{ fontSize: 12, color: "var(--accent-dark)" }}>View all</Link>}>
+      <div className="grid-panels" style={{ marginBottom: 16 }}>
+        <Panel
+          title={`Low stock${num(data.counts?.lowStock) > data.lowStock.length ? ` (${num(data.counts.lowStock)})` : ""}`}
+          icon={AlertTriangle}
+          action={<Link to="/stock" style={{ fontSize: 12, color: "var(--accent-dark)" }}>View all</Link>}
+        >
           <div style={{ padding: "6px 0", maxHeight: 330, overflowY: "auto" }}>
             {data.lowStock.length === 0 ? (
               <p style={{ padding: "24px 18px", textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>All items stocked ✓</p>
@@ -244,13 +279,18 @@ export default function Dashboard() {
                   </p>
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", flexShrink: 0 }}>
                 {bill.status !== "completed" && <Pill tone={bill.status === "cancelled" ? "danger" : "warning"}>{bill.status.replace("_", " ")}</Pill>}
                 {num(bill.dueAmount) > 0 && <Pill tone="danger">Due</Pill>}
-                <span className="badge" style={{ background: "var(--bg-sunken)", color: "var(--text-secondary)", border: "1px solid var(--border)", fontSize: 11 }}>
+                <span
+                  className="badge hidden sm:inline-flex"
+                  style={{ background: "var(--bg-sunken)", color: "var(--text-secondary)", border: "1px solid var(--border)", fontSize: 11 }}
+                >
                   {PAYMENT_LABELS[bill.paymentMethod] || bill.paymentMethod}
                 </span>
-                <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", fontFamily: "JetBrains Mono, monospace" }}>{formatCurrency(bill.totalAmount)}</p>
+                <p className="tabular" style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", fontFamily: "JetBrains Mono, monospace" }}>
+                  {formatCurrency(bill.totalAmount)}
+                </p>
               </div>
             </div>
           ))

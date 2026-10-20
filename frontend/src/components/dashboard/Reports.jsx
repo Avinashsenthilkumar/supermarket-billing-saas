@@ -103,8 +103,9 @@ export default function Reports() {
     if (tab === "categories") downloadCSV(name, [["Category", "Qty", "Revenue", "Profit"], ...data.categories.map((c) => [c.category, c.qty, c.revenue, c.profit])]);
     if (tab === "gst")
       downloadCSV(name, [
-        ["GST %", "Taxable", "CGST", "SGST", "Total tax", "Invoice value"],
-        ...data.slabs.map((s) => [s.rate, s.taxable, s.cgst, s.sgst, s.tax, s.total]),
+        ["GST %", "Supply", "Taxable", "CGST", "SGST", "IGST", "Total tax", "Invoice value"],
+        ...data.slabs.map((s) => [s.rate, s.interState ? "Inter-state" : "Intra-state", s.taxable, s.cgst, s.sgst, s.igst, s.tax, s.total]),
+        ["", "Total", data.totals.taxable, data.totals.cgst, data.totals.sgst, data.totals.igst, data.totals.outputTax, ""],
         [],
         ["HSN", "GST %", "Qty", "Taxable", "Tax"],
         ...data.hsn.map((h) => [h.hsn, h.rate, h.qty, h.taxable, h.tax]),
@@ -174,18 +175,18 @@ function ReportBody({ tab, data }) {
     const s = data.summary;
     return (
       <>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 14 }}>
+        <div className="grid-stats" style={{ marginBottom: 14 }}>
           <StatCard icon={IndianRupee} label="Net sales" value={formatCurrency(s.totalRevenue)} sub={`${s.totalBills} bills`} />
           <StatCard icon={Receipt} label="Average bill" value={formatCurrency(s.averageBillValue)} sub={`${formatQty(s.totalItems)} items sold`} accentColor="#3a5a7a" />
           <StatCard icon={Percent} label="Tax collected" value={formatCurrency(s.totalTax)} sub={`Discounts ${formatCurrency(s.totalDiscount)}`} accentColor="#7a5a3a" />
           {s.grossProfit !== undefined && <StatCard icon={TrendingUp} label="Gross profit" value={formatCurrency(s.grossProfit)} sub={`Cost ${formatCurrency(s.costOfGoods)}`} accentColor="#3a7a5a" />}
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div className="grid-stats-sm" style={{ marginBottom: 16 }}>
           <MiniStat label="Credit given (due)" value={formatCurrency(s.totalDue)} tone="danger" />
           <MiniStat label="Dues collected" value={formatCurrency(s.duesCollected)} tone="success" />
           <MiniStat label="Returns" value={formatCurrency(s.totalReturns)} />
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginBottom: 16 }} className="report-grid">
+        <div className="grid-main-side" style={{ marginBottom: 16 }}>
           <div className="card" style={{ padding: 20 }}>
             <p style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 12 }}>Daily sales</p>
             {data.daily.length ? (
@@ -249,7 +250,7 @@ function ReportBody({ tab, data }) {
   if (tab === "products")
     return (
       <div className="card" style={{ overflow: "hidden" }}>
-        <Table>
+        <Table stack={false}>
           <thead>
             <tr>
               <Th>#</Th>
@@ -282,7 +283,7 @@ function ReportBody({ tab, data }) {
   if (tab === "categories")
     return (
       <div className="card" style={{ overflow: "hidden" }}>
-        <Table>
+        <Table stack={false}>
           <thead>
             <tr>
               <Th>Category</Th>
@@ -309,7 +310,7 @@ function ReportBody({ tab, data }) {
   if (tab === "gst")
     return (
       <>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div className="grid-stats-sm" style={{ marginBottom: 16 }}>
           <MiniStat label="Taxable value" value={formatCurrency(data.totals.taxable)} />
           <MiniStat label="Output tax (sales)" value={formatCurrency(data.totals.outputTax)} />
           <MiniStat label="Input tax (purchases)" value={formatCurrency(data.totals.inputTax)} tone="success" />
@@ -317,34 +318,51 @@ function ReportBody({ tab, data }) {
         </div>
         <div className="card" style={{ overflow: "hidden", marginBottom: 16 }}>
           <div style={{ padding: "12px 16px", fontSize: 13, fontWeight: 600, borderBottom: "1px solid var(--border)" }}>Rate-wise summary {data.gstNumber ? `· GSTIN ${data.gstNumber}` : ""}</div>
-          <Table>
+          <Table stack={false} minWidth={720}>
             <thead>
               <tr>
                 <Th>GST rate</Th>
+                <Th>Supply</Th>
                 <Th align="right">Taxable</Th>
                 <Th align="right">CGST</Th>
                 <Th align="right">SGST</Th>
+                <Th align="right">IGST</Th>
                 <Th align="right">Total tax</Th>
                 <Th align="right">Invoice value</Th>
               </tr>
             </thead>
             <tbody>
+              {/* Intra-state and inter-state sales at the same rate are separate rows:
+                  GSTR-1 reports CGST+SGST and IGST separately. */}
               {data.slabs.map((s) => (
-                <tr key={s.rate}>
+                <tr key={`${s.rate}-${s.interState ? "inter" : "intra"}`}>
                   <Td>{s.rate}%</Td>
+                  <Td muted style={{ fontSize: 12.5 }}>{s.interState ? "Inter-state" : "Intra-state"}</Td>
                   <Td align="right" mono>{formatCurrency(s.taxable)}</Td>
-                  <Td align="right" mono>{formatCurrency(s.cgst)}</Td>
-                  <Td align="right" mono>{formatCurrency(s.sgst)}</Td>
+                  <Td align="right" mono muted={!s.cgst}>{formatCurrency(s.cgst)}</Td>
+                  <Td align="right" mono muted={!s.sgst}>{formatCurrency(s.sgst)}</Td>
+                  <Td align="right" mono muted={!s.igst}>{formatCurrency(s.igst)}</Td>
                   <Td align="right" mono>{formatCurrency(s.tax)}</Td>
                   <Td align="right" mono>{formatCurrency(s.total)}</Td>
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr style={{ fontWeight: 600, background: "var(--bg-sunken)" }}>
+                <Td colSpan={2}>Total</Td>
+                <Td align="right" mono>{formatCurrency(data.totals.taxable)}</Td>
+                <Td align="right" mono>{formatCurrency(data.totals.cgst)}</Td>
+                <Td align="right" mono>{formatCurrency(data.totals.sgst)}</Td>
+                <Td align="right" mono>{formatCurrency(data.totals.igst)}</Td>
+                <Td align="right" mono>{formatCurrency(data.totals.outputTax)}</Td>
+                <Td />
+              </tr>
+            </tfoot>
           </Table>
         </div>
         <div className="card" style={{ overflow: "hidden" }}>
           <div style={{ padding: "12px 16px", fontSize: 13, fontWeight: 600, borderBottom: "1px solid var(--border)" }}>HSN summary</div>
-          <Table>
+          <Table stack={false}>
             <thead>
               <tr>
                 <Th>HSN</Th>
@@ -374,7 +392,7 @@ function ReportBody({ tab, data }) {
     const s = data.summary;
     return (
       <>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div className="grid-stats-sm" style={{ marginBottom: 16 }}>
           <MiniStat label="Sales (incl. tax)" value={formatCurrency(s.revenue)} />
           <MiniStat label="Tax" value={formatCurrency(s.tax)} />
           <MiniStat label="Cost of goods" value={formatCurrency(s.cost)} />
@@ -385,9 +403,9 @@ function ReportBody({ tab, data }) {
         <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 12 }}>
           Profit uses each product's cost price at the time of sale. Keep cost prices updated (Purchases do this automatically). Margin: {s.margin}%
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }} className="report-grid">
+        <div className="grid-main-side">
           <div className="card" style={{ overflow: "hidden" }}>
-            <Table>
+            <Table stack={false}>
               <thead>
                 <tr>
                   <Th>Date</Th>
@@ -428,7 +446,7 @@ function ReportBody({ tab, data }) {
   if (tab === "staff")
     return (
       <div className="card" style={{ overflow: "hidden" }}>
-        <Table>
+        <Table stack={false}>
           <thead>
             <tr>
               <Th>Cashier</Th>
@@ -460,12 +478,12 @@ function ReportBody({ tab, data }) {
     const value = data.reduce((a, r) => a + r.stockValue, 0);
     return (
       <>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div className="grid-stats-sm" style={{ marginBottom: 16 }}>
           <MiniStat label="Products" value={data.length} />
           <MiniStat label="Closing stock value (cost)" value={formatCurrency(value)} tone="accent" />
         </div>
         <div className="card" style={{ overflow: "hidden" }}>
-          <Table minWidth={900}>
+          <Table minWidth={900} stack={false}>
             <thead>
               <tr>
                 <Th>Product</Th>
@@ -505,13 +523,13 @@ function ReportBody({ tab, data }) {
     const rows = [...data.expired, ...data.expiring];
     return (
       <>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div className="grid-stats-sm" style={{ marginBottom: 16 }}>
           <MiniStat label="Already expired" value={data.expired.length} tone="danger" />
           <MiniStat label={`Expiring in ${data.days} days`} value={data.expiring.length} tone="accent" />
           <MiniStat label="Stock value at risk" value={formatCurrency(data.valueAtRisk)} />
         </div>
         <div className="card" style={{ overflow: "hidden" }}>
-          <Table>
+          <Table stack={false}>
             <thead>
               <tr>
                 <Th>Product</Th>

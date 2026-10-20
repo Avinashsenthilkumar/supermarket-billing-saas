@@ -8,20 +8,37 @@ const { createDatabaseIfMissing } = require("./config/database");
 const { sequelize, Shop, User, PlatformSetting } = require("./models/master");
 const { provisionTenant, dbNameForShop, closeAll, stats } = require("./tenant/tenantManager");
 const { errorHandler, notFound } = require("./middleware/errorHandler");
+const { securityHeaders, apiLimiter } = require("./middleware/security");
 const { PLATFORM_DEFAULTS } = require("./utils/defaults");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ── Middleware ───────────────────────────────────────────────────────────────
+// Behind Railway / Render / nginx the real client IP is in X-Forwarded-For; without
+// this every request looks like it comes from the proxy and rate limiting is useless.
+app.set("trust proxy", process.env.TRUST_PROXY === "false" ? false : 1);
+
 const origins = (process.env.CORS_ORIGIN || "*").split(",").map((s) => s.trim());
 app.use(cors({ origin: origins.includes("*") ? true : origins, credentials: true }));
+app.use(securityHeaders);
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 app.disable("x-powered-by");
 
 // ── API Routes ───────────────────────────────────────────────────────────────
-app.get("/api/health", (req, res) => res.json({ status: "OK", timestamp: new Date(), tenants: stats().openConnections }));
+// Deep health check: a 200 here means the master database really answers, so an
+// orchestrator restarts the container when MySQL is gone instead of leaving it up.
+app.get("/api/health", async (req, res) => {
+  try {
+    await sequelize.query("SELECT 1");
+    res.json({ status: "OK", database: "up", timestamp: new Date(), tenants: stats().openConnections });
+  } catch (err) {
+    res.status(503).json({ status: "DEGRADED", database: "down", message: err.message });
+  }
+});
+
+app.use("/api", apiLimiter);
 app.use("/api/platform", require("./routes/platform"));
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/admin", require("./routes/admin"));
@@ -38,9 +55,22 @@ app.use("/api/reports", require("./routes/reports"));
 // ── Serve the React build (single-server deployments) ───────────────────────
 const buildPath = path.join(__dirname, "../frontend/build");
 if (process.env.NODE_ENV === "production" && fs.existsSync(buildPath)) {
-  app.use(express.static(buildPath));
+  // Hashed bundles under /static can be cached forever; everything else (index.html,
+  // manifest, service worker) must revalidate or the till keeps running old code.
+  app.use(
+    express.static(buildPath, {
+      setHeaders: (res, filePath) => {
+        if (/[.-][0-9a-f]{8,}\.(js|css)$/i.test(filePath) || filePath.includes(`${path.sep}static${path.sep}`)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        } else {
+          res.setHeader("Cache-Control", "no-cache");
+        }
+      },
+    }),
+  );
   app.get("*", (req, res, next) => {
     if (req.path.startsWith("/api")) return next();
+    res.setHeader("Cache-Control", "no-cache");
     res.sendFile(path.join(buildPath, "index.html"));
   });
 }
@@ -94,6 +124,12 @@ const seed = async () => {
 const start = async () => {
   try {
     if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET is missing in .env");
+    if (process.env.JWT_SECRET.length < 32) {
+      throw new Error("JWT_SECRET must be at least 32 characters — anyone who guesses it can sign in as any shop");
+    }
+    if (process.env.NODE_ENV === "production" && /change_this|secret_key|yourpassword/i.test(process.env.JWT_SECRET)) {
+      throw new Error("JWT_SECRET is still the example value — set a long random string before going live");
+    }
     await createDatabaseIfMissing(process.env.DB_NAME || "supermart_master");
     await sequelize.authenticate();
     console.log("✅ Master database connected");

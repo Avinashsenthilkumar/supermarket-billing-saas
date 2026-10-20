@@ -12,20 +12,44 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    // Any successful response proves the server is reachable again.
+    window.dispatchEvent(new CustomEvent("api-reachable"));
+    return res;
+  },
   (err) => {
     const status = err.response?.status;
     const url = err.config?.url || "";
+
+    // No response at all → the network or the server is down, not an auth problem.
+    // useOnline picks this up and starts probing /health.
+    if (!err.response) window.dispatchEvent(new CustomEvent("api-unreachable"));
+
     if (status === 401 && !url.includes("/auth/login")) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      localStorage.removeItem("shop");
-      if (!window.location.pathname.startsWith("/login")) window.location.href = "/login";
+      // Keep "pos.cart" and "theme" — a token that expired mid-sale must not throw away
+      // the trolley the cashier has already scanned. It is restored after signing back in.
+      ["token", "user", "shop", "adminToken"].forEach((k) => localStorage.removeItem(k));
+      if (!window.location.pathname.startsWith("/login")) {
+        // A full page load (rather than a router navigation) guarantees every component
+        // drops its stale authenticated state.
+        window.location.href = "/login";
+      }
     }
     if (status === 402) window.dispatchEvent(new CustomEvent("subscription-expired"));
+    if (status === 429) window.dispatchEvent(new CustomEvent("rate-limited", { detail: err.response?.data }));
     return Promise.reject(err);
   },
 );
+
+/** Key for one checkout attempt, so a retry of the same sale cannot create a second bill. */
+export const newClientRef = () => {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  } catch {
+    /* fall through */
+  }
+  return `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+};
 
 // ── Platform (public) ────────────────────────────────────────────────────────
 export const platformAPI = {
