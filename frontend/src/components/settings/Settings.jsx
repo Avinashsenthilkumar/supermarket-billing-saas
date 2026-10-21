@@ -97,7 +97,7 @@ const SAMPLE_BILL = {
 
 export default function Settings() {
   const { settings, save, preview, apply } = useSettings();
-  const { user, shop, can, setUser, isSuperAdmin } = useAuth();
+  const { can } = useAuth();
   const isOwner = can("owner");
   const [tab, setTab] = useState(isOwner ? "business" : "account");
   const [form, setForm] = useState(settings);

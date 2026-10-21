@@ -1610,7 +1610,7 @@ export default function Stock() {
 
     const win = window.open("", "_blank");
     win.document.write(`<!DOCTYPE html><html><head><title>Labels</title>
-      <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"><\/script>
+      <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
       <style>
         *{margin:0;padding:0;box-sizing:border-box;}
         body{font-family:Helvetica,Arial,sans-serif;background:#fff;}
@@ -1633,7 +1633,7 @@ export default function Stock() {
           });
           setTimeout(function(){ window.print(); }, 600);
         };
-      <\/script>
+      </script>
     </body></html>`);
     win.document.close();
   };

@@ -327,7 +327,7 @@ export default function BarcodeGenerator() {
       </style>
     </head><body>
       <div class="grid">${labelHTML}</div>
-      <script>window.onload=function(){setTimeout(function(){window.print();},500);};<\/script>
+      <script>window.onload=function(){setTimeout(function(){window.print();},500);};</script>
     </body></html>`);
     printWindow.document.close();
   };
