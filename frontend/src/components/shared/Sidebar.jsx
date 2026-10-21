@@ -314,7 +314,7 @@ export default function Sidebar() {
           its own guesswork padding to avoid it covering the title. A real bar reserves
           the space once, and shows which shop the till belongs to. */}
       <div
-        className="md:hidden no-print"
+        className="md:hidden no-print flex items-center"
         style={{
           position: "fixed",
           top: 0,
@@ -322,7 +322,6 @@ export default function Sidebar() {
           right: 0,
           height: 46,
           zIndex: 50,
-          display: "flex",
           alignItems: "center",
           gap: 10,
           padding: "0 12px",
