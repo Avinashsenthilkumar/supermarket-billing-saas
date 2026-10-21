@@ -186,7 +186,10 @@ export const reportAPI = {
 
 // ── Platform admin ───────────────────────────────────────────────────────────
 export const adminAPI = {
-  getStats: () => api.get("/admin/stats"),
+  // light=1 skips the per-business rollups, which would otherwise open one database
+  // connection per shop just to render the dashboard
+  getStats: (params) => api.get("/admin/stats", { params }),
+  getUsers: (params) => api.get("/admin/users", { params }),
   getShops: (params) => api.get("/admin/shops", { params }),
   getShop: (id) => api.get(`/admin/shops/${id}`),
   createShop: (data) => api.post("/admin/shops", data),

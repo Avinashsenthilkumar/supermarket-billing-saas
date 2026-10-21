@@ -8,6 +8,7 @@ router.use(protect, requireSuperAdmin);
 router.get("/stats", c.getStats);
 router.get("/settings", c.getPlatform);
 router.put("/settings", c.updatePlatform);
+router.get("/users", c.getUsers);
 router.get("/shops", c.getShops);
 router.post("/shops", c.createShop);
 router.get("/shops/:id", c.getShop);

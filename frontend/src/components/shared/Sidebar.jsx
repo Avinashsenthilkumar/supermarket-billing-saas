@@ -17,7 +17,10 @@ import {
   ChevronLeft,
   ChevronRight,
   ScanLine,
-  Shield,
+  Crown,
+  Store,
+  CreditCard,
+  Palette,
   Truck,
   ClipboardList,
   Wallet,
@@ -25,6 +28,32 @@ import {
   Settings as SettingsIcon,
   Calculator,
 } from "lucide-react";
+
+// The platform admin runs the SaaS: create businesses, manage their plans, set platform
+// branding. No till, no stock, no customers — those belong to a shop, and the admin only
+// sees them by opening a specific shop for support (which switches to the owner's token).
+const ADMIN_SECTIONS = [
+  {
+    title: "Platform",
+    items: [
+      { to: "/admin", icon: LayoutDashboard, label: "Dashboard", end: true },
+      { to: "/admin/businesses", icon: Store, label: "Businesses" },
+      { to: "/admin/subscriptions", icon: CreditCard, label: "Subscriptions" },
+      { to: "/admin/users", icon: Users, label: "Users" },
+    ],
+  },
+  {
+    title: "Configure",
+    items: [
+      { to: "/admin/branding", icon: Palette, label: "Themes & Branding" },
+      { to: "/admin/reports", icon: TrendingUp, label: "Reports" },
+      { to: "/admin/settings", icon: SettingsIcon, label: "Settings" },
+      // Without this the platform admin has no way to change their own password —
+      // the shop Settings page is not reachable from the admin panel.
+      { to: "/admin/account", icon: UserCog, label: "My Account" },
+    ],
+  },
+];
 
 // roles: who can see the item (super admin sees everything)
 const SECTIONS = [
@@ -60,11 +89,12 @@ const SECTIONS = [
   },
 ];
 
-function NavItem({ to, icon: Icon, label, collapsed, onClick }) {
+function NavItem({ to, icon: Icon, label, collapsed, onClick, end }) {
   const [hovered, setHovered] = useState(false);
   return (
     <NavLink
       to={to}
+      end={end}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -110,11 +140,13 @@ function NavItem({ to, icon: Icon, label, collapsed, onClick }) {
 }
 
 function SidebarBody({ collapsed, onClose }) {
-  const { user, shop, logout, isSuperAdmin, can } = useAuth();
-  const { settings } = useSettings();
+  const { user, shop, logout, isSuperAdmin, isPlatformOnly, can } = useAuth();
+  const { settings, platform } = useSettings();
   const navigate = useNavigate();
   const [logoutHover, setLogoutHover] = useState(false);
-  const shopName = settings.businessName || shop?.name || "My Shop";
+  const shopName = isPlatformOnly ? platform.platformName || "SuperMart" : settings.businessName || shop?.name || "My Shop";
+  const tagline = isPlatformOnly ? "Admin Panel" : settings.tagline || "Point of Sale";
+  const sections = isPlatformOnly ? ADMIN_SECTIONS : SECTIONS;
 
   const handleLogout = () => {
     logout();
@@ -133,7 +165,7 @@ function SidebarBody({ collapsed, onClose }) {
           justifyContent: collapsed ? "center" : "flex-start",
         }}
       >
-        {settings.logo ? (
+        {!isPlatformOnly && settings.logo ? (
           <img src={settings.logo} alt="" style={{ width: 32, height: 32, borderRadius: 8, objectFit: "cover", flexShrink: 0, background: "#fff" }} />
         ) : (
           <div
@@ -148,7 +180,7 @@ function SidebarBody({ collapsed, onClose }) {
               flexShrink: 0,
             }}
           >
-            <ShoppingCart size={14} color="var(--accent-contrast)" />
+            {isPlatformOnly ? <Crown size={14} color="var(--accent-contrast)" /> : <ShoppingCart size={14} color="var(--accent-contrast)" />}
           </div>
         )}
         {!collapsed && (
@@ -168,14 +200,14 @@ function SidebarBody({ collapsed, onClose }) {
               {shopName}
             </p>
             <p style={{ fontSize: 10.5, color: "var(--sidebar-muted)", marginTop: 3, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-              {settings.tagline || "Point of Sale"}
+              {tagline}
             </p>
           </div>
         )}
       </div>
 
       <nav style={{ flex: 1, padding: "10px 8px", display: "flex", flexDirection: "column", gap: 1, overflowY: "auto" }}>
-        {SECTIONS.map((section) => {
+        {sections.map((section) => {
           const items = section.items.filter((i) => !i.roles || can(...i.roles));
           if (!items.length) return null;
           return (
@@ -191,16 +223,6 @@ function SidebarBody({ collapsed, onClose }) {
             </div>
           );
         })}
-        {isSuperAdmin && (
-          <div style={{ marginTop: 4 }}>
-            {!collapsed && (
-              <p style={{ fontSize: 10.5, color: "var(--sidebar-muted)", opacity: 0.7, padding: "10px 14px 4px", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                Platform
-              </p>
-            )}
-            <NavItem to="/admin" icon={Shield} label="Admin" collapsed={collapsed} onClick={onClose} />
-          </div>
-        )}
       </nav>
 
       <div style={{ padding: "10px 8px", borderTop: "1px solid var(--sidebar-border)" }}>
@@ -226,7 +248,7 @@ function SidebarBody({ collapsed, onClose }) {
                 {user?.username}
               </p>
               <p style={{ color: "var(--sidebar-muted)", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {isSuperAdmin ? "Platform admin" : ROLE_LABELS[user?.role] || user?.role}
+                {isSuperAdmin ? "Super Administrator" : ROLE_LABELS[user?.role] || user?.role}
               </p>
             </div>
           </div>

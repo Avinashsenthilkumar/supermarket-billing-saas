@@ -17,13 +17,13 @@ import {
   Trash2,
   RotateCcw,
   Printer,
-  Key,
 } from "lucide-react";
 import { useSettings } from "../../context/SettingsContext";
 import { useAuth } from "../../context/AuthContext";
-import { authAPI, settingsAPI } from "../../services/api";
-import { getErrorMessage, formatDate, ROLE_LABELS } from "../../utils/helpers";
+import { settingsAPI } from "../../services/api";
+import { getErrorMessage } from "../../utils/helpers";
 import { printReceipt } from "../../utils/receipt";
+import AccountPanel from "../shared/AccountPanel";
 import { Page, SectionHeader, Tabs, Field, Grid, Toggle, Spinner } from "../shared/UI";
 
 const ACCENTS = ["#bf9c5a", "#c0673f", "#b0445a", "#7a4fb5", "#3f6fb5", "#2f8c86", "#4c8a4a", "#8a7a2a", "#3d3d3d", "#d4a017"];
@@ -556,105 +556,7 @@ export default function Settings() {
         </Section>
       )}
 
-      {tab === "account" && <AccountTab user={user} shop={shop} setUser={setUser} isSuperAdmin={isSuperAdmin} />}
+      {tab === "account" && <AccountPanel />}
     </Page>
-  );
-}
-
-function AccountTab({ user, shop, setUser, isSuperAdmin }) {
-  const [profile, setProfile] = useState({ username: user?.username || "", phone: user?.phone || "" });
-  const [pw, setPw] = useState({ currentPassword: "", newPassword: "", confirm: "" });
-  const [busy, setBusy] = useState("");
-
-  const saveProfile = async () => {
-    setBusy("profile");
-    try {
-      const r = await authAPI.updateProfile(profile);
-      setUser(r.data.data.user);
-      localStorage.setItem("user", JSON.stringify(r.data.data.user));
-      toast.success("Profile updated");
-    } catch (err) {
-      toast.error(getErrorMessage(err));
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const changePassword = async () => {
-    if (pw.newPassword.length < 6) return toast.error("New password must be at least 6 characters");
-    if (pw.newPassword !== pw.confirm) return toast.error("Passwords do not match");
-    setBusy("pw");
-    try {
-      await authAPI.changePassword({ currentPassword: pw.currentPassword, newPassword: pw.newPassword });
-      setPw({ currentPassword: "", newPassword: "", confirm: "" });
-      toast.success("Password changed");
-    } catch (err) {
-      toast.error(getErrorMessage(err));
-    } finally {
-      setBusy("");
-    }
-  };
-
-  return (
-    <>
-      <Section title="Profile">
-        <Grid cols={2}>
-          <Field label="Name">
-            <input className="input-field" value={profile.username} onChange={(e) => setProfile({ ...profile, username: e.target.value })} />
-          </Field>
-          <Field label="Phone">
-            <input className="input-field" value={profile.phone || ""} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} />
-          </Field>
-          <Field label="Email (login)">
-            <input className="input-field" value={user?.email || ""} disabled />
-          </Field>
-          <Field label="Role">
-            <input className="input-field" value={isSuperAdmin ? "Platform admin" : ROLE_LABELS[user?.role] || user?.role} disabled />
-          </Field>
-        </Grid>
-        <button className="btn-primary" style={{ marginTop: 14 }} onClick={saveProfile} disabled={busy === "profile"}>
-          {busy === "profile" ? <Spinner size={13} color="var(--bg)" /> : <Save size={13} />} Save profile
-        </button>
-      </Section>
-      <Section title="Change password">
-        <Grid cols={3}>
-          <Field label="Current password">
-            <input type="password" className="input-field" value={pw.currentPassword} onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })} autoComplete="current-password" />
-          </Field>
-          <Field label="New password">
-            <input type="password" className="input-field" value={pw.newPassword} onChange={(e) => setPw({ ...pw, newPassword: e.target.value })} autoComplete="new-password" />
-          </Field>
-          <Field label="Confirm new password">
-            <input type="password" className="input-field" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} autoComplete="new-password" />
-          </Field>
-        </Grid>
-        <button className="btn-primary" style={{ marginTop: 14 }} onClick={changePassword} disabled={busy === "pw" || !pw.currentPassword}>
-          {busy === "pw" ? <Spinner size={13} color="var(--bg)" /> : <Key size={13} />} Update password
-        </button>
-      </Section>
-      {shop && (
-        <Section title="Subscription">
-          <Grid cols={3}>
-            <div className="card-sunken" style={{ padding: "12px 14px" }}>
-              <p style={{ fontSize: 12, color: "var(--text-muted)" }}>Plan</p>
-              <p style={{ fontSize: 16, fontWeight: 600 }}>{shop.planLabel || shop.plan}</p>
-            </div>
-            <div className="card-sunken" style={{ padding: "12px 14px" }}>
-              <p style={{ fontSize: 12, color: "var(--text-muted)" }}>Valid till</p>
-              <p style={{ fontSize: 16, fontWeight: 600, color: shop.subscriptionActive ? "var(--text-primary)" : "var(--danger)" }}>
-                {shop.subscriptionEnds ? formatDate(shop.subscriptionEnds) : "Lifetime"}
-              </p>
-            </div>
-            <div className="card-sunken" style={{ padding: "12px 14px" }}>
-              <p style={{ fontSize: 12, color: "var(--text-muted)" }}>Limits</p>
-              <p style={{ fontSize: 13.5, fontWeight: 500 }}>
-                {shop.limits?.maxUsers ? `${shop.limits.maxUsers} users` : "Unlimited users"} ·{" "}
-                {shop.limits?.maxProducts ? `${shop.limits.maxProducts} products` : "Unlimited products"}
-              </p>
-            </div>
-          </Grid>
-        </Section>
-      )}
-    </>
   );
 }

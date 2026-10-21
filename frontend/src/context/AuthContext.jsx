@@ -111,6 +111,11 @@ export const AuthProvider = ({ children }) => {
   const isSuperAdmin = !!user?.isSuperAdmin;
   const can = useCallback((...roles) => isSuperAdmin || roles.includes(role), [isSuperAdmin, role]);
 
+  // The platform admin runs the SaaS, not a shop: they create and manage businesses and
+  // never bill at a counter. While impersonating ("open shop" for support) the token is
+  // the owner's, isSuperAdmin is false, and the full shop app comes back as normal.
+  const isPlatformOnly = isSuperAdmin;
+
   return (
     <AuthContext.Provider
       value={{
@@ -127,6 +132,7 @@ export const AuthProvider = ({ children }) => {
         returnToAdmin,
         isImpersonating: !!localStorage.getItem("adminToken"),
         isSuperAdmin,
+        isPlatformOnly,
         role,
         can,
         subscriptionExpired,

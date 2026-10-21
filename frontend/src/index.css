@@ -923,6 +923,10 @@ input[type="number"].input-field {
 
 .tabular {
   font-variant-numeric: tabular-nums;
+  /* A money figure must never be split across lines ("₹1,24,680" / ".00") — the global
+     overflow-wrap: anywhere that keeps long product names in check would do exactly that. */
+  overflow-wrap: normal;
+  word-break: keep-all;
 }
 .truncate-1 {
   overflow: hidden;

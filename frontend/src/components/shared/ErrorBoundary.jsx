@@ -43,6 +43,18 @@ export default class ErrorBoundary extends React.Component {
       }
     })();
 
+    // Read from storage rather than context: this is a class component sitting above the
+    // providers, and sending a platform admin "back to billing" would bounce them
+    // straight back here — they have no till.
+    const isAdmin = (() => {
+      try {
+        return !!JSON.parse(localStorage.getItem("user") || "null")?.isSuperAdmin;
+      } catch {
+        return false;
+      }
+    })();
+    const [homePath, homeLabel] = isAdmin ? ["/admin", "Back to admin"] : ["/billing", "Back to billing"];
+
     return (
       <div style={box}>
         <div className="card" style={{ maxWidth: 560, width: "100%", padding: "28px 26px" }}>
@@ -52,15 +64,15 @@ export default class ErrorBoundary extends React.Component {
           <h1 style={{ fontSize: 22, marginTop: 10, color: "var(--text-primary)" }}>Something broke on this screen</h1>
           <p style={{ fontSize: 13.5, color: "var(--text-secondary)", marginTop: 8, lineHeight: 1.6 }}>
             Nothing was lost on the server — every saved bill is safe.
-            {held > 0 && ` The ${held} item${held === 1 ? "" : "s"} in your cart are still here, so you can carry on billing.`}
+            {!isAdmin && held > 0 && ` The ${held} item${held === 1 ? "" : "s"} in your cart are still here, so you can carry on billing.`}
           </p>
 
           <div style={{ display: "flex", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
             <button className="btn-primary" onClick={this.reset}>
               Try again
             </button>
-            <button className="btn-ghost" onClick={() => window.location.assign("/billing")}>
-              Back to billing
+            <button className="btn-ghost" onClick={() => window.location.assign(homePath)}>
+              {homeLabel}
             </button>
             <button className="btn-ghost" onClick={() => window.location.reload()}>
               Reload app

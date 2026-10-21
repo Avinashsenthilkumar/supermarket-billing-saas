@@ -3,7 +3,7 @@ const { Op } = require("sequelize");
 const { Shop, User, PlatformSetting } = require("../models/master");
 const { getTenant, closeTenant, stats: tenantStats } = require("../tenant/tenantManager");
 const { createDatabaseIfMissing, assertSafeDbName, sequelize: master } = require("../config/database");
-const { asyncHandler, HttpError, str, int, num, bool } = require("../utils/helpers");
+const { asyncHandler, HttpError, str, int, num, bool, round2 } = require("../utils/helpers");
 const { getPlatformSettings, clearPlatformCache } = require("../utils/settings");
 const { mergePlatform } = require("../utils/defaults");
 const { createShopWithOwner } = require("../utils/shopService");
@@ -62,33 +62,98 @@ const shopRow = async (shop, platform) => {
   };
 };
 
-// GET /api/admin/stats
+// A business counts as a live subscription when it is switched on and its plan has not run out.
+const isLiveAt = (shop, at) => shop.isActive && (!shop.subscriptionEnds || new Date(shop.subscriptionEnds).getTime() >= at);
+
+// Percentage change, guarding the "nothing to compare against" case.
+const growthPct = (current, before) => {
+  if (before > 0) return Math.round(((current - before) / before) * 100);
+  return current > 0 ? 100 : 0;
+};
+
+const shopStatus = (shop, now) => {
+  if (!shop.isActive) return "inactive";
+  if (shop.subscriptionEnds && new Date(shop.subscriptionEnds).getTime() < now) return "expired";
+  return shop.plan === "free" ? "trial" : "active";
+};
+
+// GET /api/admin/stats   (?light=1 skips the per-tenant rollups)
 const getStats = asyncHandler(async (req, res) => {
   const platform = await getPlatformSettings();
-  const shops = await Shop.findAll();
-  const summaries = await mapLimit(shops, 5, tenantSummary);
+  const shops = await Shop.findAll({ order: [["createdAt", "DESC"]] });
   const now = Date.now();
+  const monthAgo = new Date(now - 30 * 86400000);
+  const priceOf = (s) => Number(platform.plans[s.plan]?.price) || 0;
+
   const byPlan = {};
   shops.forEach((s) => {
     byPlan[s.plan] = (byPlan[s.plan] || 0) + 1;
   });
-  res.json({
-    success: true,
-    data: {
-      totalShops: shops.length,
-      activeShops: shops.filter((s) => s.isActive).length,
-      inactiveShops: shops.filter((s) => !s.isActive).length,
-      expiredShops: shops.filter((s) => s.subscriptionEnds && new Date(s.subscriptionEnds).getTime() < now).length,
-      totalUsers: await User.count(),
-      totalProducts: summaries.reduce((a, s) => a + s.products, 0),
-      totalBills: summaries.reduce((a, s) => a + s.bills, 0),
-      totalRevenue: summaries.reduce((a, s) => a + s.revenue, 0),
-      totalCustomers: summaries.reduce((a, s) => a + s.customers, 0),
-      byPlan,
-      plans: platform.plans,
-      connections: tenantStats().openConnections,
-    },
+
+  const live = shops.filter((s) => isLiveAt(s, now));
+  const monthlyRevenue = round2(live.reduce((a, s) => a + priceOf(s), 0));
+
+  // "vs last month" compares against the businesses that already existed a month ago and
+  // whose plan had not run out by then. Deleted businesses are gone from the table, so
+  // this measures growth among the ones still on the platform.
+  const existedThen = shops.filter((s) => new Date(s.createdAt).getTime() < monthAgo.getTime());
+  const liveThen = existedThen.filter((s) => isLiveAt(s, monthAgo.getTime()));
+  const revenueThen = round2(liveThen.reduce((a, s) => a + priceOf(s), 0));
+
+  const recentShops = shops.slice(0, 6);
+  const [totalUsers, usersThen, owners] = await Promise.all([
+    User.count(),
+    User.count({ where: { createdAt: { [Op.lt]: monthAgo } } }),
+    recentShops.length
+      ? User.findAll({ where: { shopId: recentShops.map((s) => s.id), role: "owner" }, order: [["id", "ASC"]] })
+      : [],
+  ]);
+  const ownerByShop = new Map();
+  owners.forEach((u) => {
+    if (!ownerByShop.has(u.shopId)) ownerByShop.set(u.shopId, u);
   });
+
+  const data = {
+    totalShops: shops.length,
+    activeShops: shops.filter((s) => s.isActive).length,
+    inactiveShops: shops.filter((s) => !s.isActive).length,
+    expiredShops: shops.filter((s) => s.subscriptionEnds && new Date(s.subscriptionEnds).getTime() < now).length,
+    activeSubscriptions: live.length,
+    monthlyRevenue,
+    totalUsers,
+    growth: {
+      businesses: growthPct(shops.length, existedThen.length),
+      users: growthPct(totalUsers, usersThen),
+      subscriptions: growthPct(live.length, liveThen.length),
+      revenue: growthPct(monthlyRevenue, revenueThen),
+    },
+    recent: recentShops.map((s) => ({
+      id: s.id,
+      name: s.name,
+      owner: ownerByShop.get(s.id)?.username || s.ownerEmail,
+      ownerEmail: s.ownerEmail,
+      plan: s.plan,
+      planLabel: platform.plans[s.plan]?.label || s.plan,
+      status: shopStatus(s, now),
+      createdAt: s.createdAt,
+    })),
+    byPlan,
+    plans: platform.plans,
+    currencySymbol: platform.currencySymbol || "₹",
+    connections: tenantStats().openConnections,
+  };
+
+  // Rolling these up opens one database connection per business, which is far too heavy
+  // for a dashboard that does not show them. Only the Businesses tab asks for them.
+  if (req.query.light !== "1") {
+    const summaries = await mapLimit(shops, 5, tenantSummary);
+    data.totalProducts = summaries.reduce((a, s) => a + s.products, 0);
+    data.totalBills = summaries.reduce((a, s) => a + s.bills, 0);
+    data.totalRevenue = summaries.reduce((a, s) => a + s.revenue, 0);
+    data.totalCustomers = summaries.reduce((a, s) => a + s.customers, 0);
+  }
+
+  res.json({ success: true, data });
 });
 
 // GET /api/admin/shops
@@ -102,6 +167,40 @@ const getShops = asyncHandler(async (req, res) => {
   const shops = await Shop.findAll({ where, order: [["createdAt", "DESC"]] });
   const data = await mapLimit(shops, 5, (s) => shopRow(s, platform));
   res.json({ success: true, data: { shops: data } });
+});
+
+// GET /api/admin/users — every login on the platform, with the business it belongs to
+const getUsers = asyncHandler(async (req, res) => {
+  const search = str(req.query.search, 120);
+  const where = {};
+  if (search) {
+    const q = `%${search}%`;
+    where[Op.or] = [{ username: { [Op.like]: q } }, { email: { [Op.like]: q } }, { phone: { [Op.like]: q } }];
+  }
+  if (req.query.role) where.role = req.query.role;
+  if (req.query.shopId) where.shopId = int(req.query.shopId);
+
+  const users = await User.findAll({
+    where,
+    order: [["createdAt", "DESC"]],
+    limit: Math.min(1000, Math.max(1, int(req.query.limit, 300))),
+  });
+  // One lookup for the shop names rather than an include per row
+  const shops = await Shop.findAll({ attributes: ["id", "name", "plan", "isActive"] });
+  const shopById = new Map(shops.map((s) => [s.id, s]));
+
+  res.json({
+    success: true,
+    data: {
+      users: users.map((u) => ({
+        ...u.toSafeJSON(),
+        shopName: shopById.get(u.shopId)?.name || "—",
+        shopPlan: shopById.get(u.shopId)?.plan || null,
+        shopActive: !!shopById.get(u.shopId)?.isActive,
+      })),
+      total: users.length,
+    },
+  });
 });
 
 // GET /api/admin/shops/:id — detail incl. users
@@ -284,6 +383,7 @@ const updatePlatform = asyncHandler(async (req, res) => {
 
 module.exports = {
   getStats,
+  getUsers,
   getShops,
   getShop,
   createShop,

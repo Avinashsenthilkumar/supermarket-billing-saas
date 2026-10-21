@@ -34,8 +34,20 @@ const Fallback = () => (
 );
 
 function Home() {
-  const { can } = useAuth();
+  const { can, isPlatformOnly } = useAuth();
+  if (isPlatformOnly) return <Navigate to="/admin" replace />;
   return <Navigate to={can("owner", "manager") ? "/dashboard" : "/billing"} replace />;
+}
+
+/**
+ * Wraps the shop (till) side of the app. The platform admin runs the SaaS and has no
+ * counter of their own, so every shop route sends them back to the admin panel. They
+ * reach a shop's data only through "open shop", which swaps in the owner's token and
+ * clears isPlatformOnly.
+ */
+function ShopOnly({ children }) {
+  const { isPlatformOnly } = useAuth();
+  return isPlatformOnly ? <Navigate to="/admin" replace /> : children;
 }
 
 const OWNER_MANAGER = ["owner", "manager"];
@@ -79,23 +91,28 @@ export default function App() {
                 }
               >
                 <Route index element={<Home />} />
-                <Route path="dashboard" element={<Dashboard />} />
-                <Route path="billing" element={<Billing />} />
-                <Route path="transactions" element={<Transactions />} />
-                <Route path="customers" element={<Customers />} />
-                <Route path="customers/:id" element={<CustomerDetails />} />
-                <Route path="day-end" element={<DayEnd />} />
-                <Route path="stock" element={<ProtectedRoute roles={OWNER_MANAGER}><Stock /></ProtectedRoute>} />
-                <Route path="barcode" element={<ProtectedRoute roles={OWNER_MANAGER}><BarcodeGenerator /></ProtectedRoute>} />
-                <Route path="purchases" element={<ProtectedRoute roles={OWNER_MANAGER}><Purchases /></ProtectedRoute>} />
-                <Route path="suppliers" element={<ProtectedRoute roles={OWNER_MANAGER}><Suppliers /></ProtectedRoute>} />
-                <Route path="reports" element={<ProtectedRoute roles={OWNER_MANAGER}><Reports /></ProtectedRoute>} />
-                <Route path="expenses" element={<ProtectedRoute roles={OWNER_MANAGER}><Expenses /></ProtectedRoute>} />
-                <Route path="staff" element={<ProtectedRoute roles={["owner"]}><Staff /></ProtectedRoute>} />
-                {/* Open to every role: the page itself shows only "My Account" to staff,
-                    which is where they change their own password. */}
-                <Route path="settings" element={<Settings />} />
-                <Route path="admin" element={<ProtectedRoute superAdmin><Admin /></ProtectedRoute>} />
+
+                {/* ── Shop (till) ── hidden from the platform admin ── */}
+                <Route path="dashboard" element={<ShopOnly><Dashboard /></ShopOnly>} />
+                <Route path="billing" element={<ShopOnly><Billing /></ShopOnly>} />
+                <Route path="transactions" element={<ShopOnly><Transactions /></ShopOnly>} />
+                <Route path="customers" element={<ShopOnly><Customers /></ShopOnly>} />
+                <Route path="customers/:id" element={<ShopOnly><CustomerDetails /></ShopOnly>} />
+                <Route path="day-end" element={<ShopOnly><DayEnd /></ShopOnly>} />
+                <Route path="stock" element={<ShopOnly><ProtectedRoute roles={OWNER_MANAGER}><Stock /></ProtectedRoute></ShopOnly>} />
+                <Route path="barcode" element={<ShopOnly><ProtectedRoute roles={OWNER_MANAGER}><BarcodeGenerator /></ProtectedRoute></ShopOnly>} />
+                <Route path="purchases" element={<ShopOnly><ProtectedRoute roles={OWNER_MANAGER}><Purchases /></ProtectedRoute></ShopOnly>} />
+                <Route path="suppliers" element={<ShopOnly><ProtectedRoute roles={OWNER_MANAGER}><Suppliers /></ProtectedRoute></ShopOnly>} />
+                <Route path="reports" element={<ShopOnly><ProtectedRoute roles={OWNER_MANAGER}><Reports /></ProtectedRoute></ShopOnly>} />
+                <Route path="expenses" element={<ShopOnly><ProtectedRoute roles={OWNER_MANAGER}><Expenses /></ProtectedRoute></ShopOnly>} />
+                <Route path="staff" element={<ShopOnly><ProtectedRoute roles={["owner"]}><Staff /></ProtectedRoute></ShopOnly>} />
+                {/* Open to every shop role: the page itself shows only "My Account" to
+                    staff, which is where they change their own password. */}
+                <Route path="settings" element={<ShopOnly><Settings /></ShopOnly>} />
+
+                {/* ── Platform admin ── the trailing segment picks the section, so the
+                    sidebar links are real URLs the admin can bookmark and refresh ── */}
+                <Route path="admin/*" element={<ProtectedRoute superAdmin><Admin /></ProtectedRoute>} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
