@@ -62,6 +62,10 @@ export default function App() {
           <BrowserRouter>
           <Toaster
             position="top-right"
+            // Modals sit at z-index 9999 and are portalled in after this, so at the
+            // toaster's default 9999 a toast raised from inside a modal was painted
+            // behind its backdrop. Keep toasts above any dialog.
+            containerStyle={{ zIndex: 20000 }}
             toastOptions={{
               duration: 3000,
               style: {
