@@ -15,6 +15,25 @@ export const num = (v, fallback = 0) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+// Keeps only digits (and a single "." when decimals are allowed) as the user types,
+// so quantity / price boxes can never hold letters, "e", "+", "-" or pasted text.
+export const numericOnly = (value, allowDecimal = false) => {
+  let s = String(value ?? "").replace(allowDecimal ? /[^0-9.]/g : /[^0-9]/g, "");
+  if (allowDecimal) {
+    const dot = s.indexOf(".");
+    if (dot !== -1) s = s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, "");
+  }
+  return s;
+};
+
+// Blocks non-numeric keys before they reach the box (paste is still cleaned by numericOnly).
+export const blockNonNumericKeys = (allowDecimal = false) => (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.key.length > 1) return; // shortcuts, arrows, Backspace, Tab…
+  if (/[0-9]/.test(e.key)) return;
+  if (allowDecimal && e.key === "." && !String(e.currentTarget.value).includes(".")) return;
+  e.preventDefault();
+};
+
 export const formatCurrency = (amount) => {
   const n = num(amount);
   const formatted = new Intl.NumberFormat(FORMAT.locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(n));

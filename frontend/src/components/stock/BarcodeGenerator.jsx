@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { productAPI } from "../../services/api";
+import { numericOnly, blockNonNumericKeys } from "../../utils/helpers";
 
 function useJsBarcode() {
   const [ready, setReady] = useState(!!window.JsBarcode);
@@ -144,18 +145,6 @@ function LabelCard({ label, index, onDelete, onDuplicate }) {
           ₹{label.price || "—"}
         </span>
       </div>
-      {label.qty && (
-        <div
-          style={{
-            textAlign: "center",
-            fontSize: 9.5,
-            color: "#999",
-            letterSpacing: "0.04em",
-          }}
-        >
-          Net Qty: {label.qty}
-        </div>
-      )}
       <div
         className="no-print"
         style={{
@@ -304,7 +293,6 @@ export default function BarcodeGenerator() {
           ${label.mrp ? `<span style="font-weight:800;font-size:13px;color:#888;">MRP <span class="mrp">₹${label.mrp}</span></span>` : `<span></span>`}
           <span class="price">₹${label.price || ""}</span>
         </div>
-        ${label.qty ? `<div class="qty">Net Qty: ${label.qty}</div>` : ""}
       </div>`,
       )
       .join("");
@@ -322,7 +310,6 @@ export default function BarcodeGenerator() {
         .mrp{font-weight:800;font-size:13px;color:#888;position:relative;display:inline-block;}
         .mrp::after{content:"";position:absolute;top:50%;left:-5%;width:110%;border-top:1.5px solid #000;transform:rotate(-20deg);transform-origin:center;}
         .price{font-weight:800;font-size:13px;color:#bf9c5a;}
-        .qty{font-size:8px;color:#999;}
         @media print{body{margin:0;} .grid{padding:5mm;gap:3mm;}}
       </style>
     </head><body>
@@ -434,7 +421,7 @@ export default function BarcodeGenerator() {
               placeholder: "e.g. Tata Salt 1kg",
             },
             {
-              label: "NET QUANTITY",
+              label: "NET QUANTITY (saved to stock, not printed)",
               key: "qty",
               placeholder: "e.g. 1kg, 500ml, 12pcs",
             },
@@ -493,7 +480,8 @@ export default function BarcodeGenerator() {
                   inputMode="decimal"
                   placeholder={placeholder}
                   value={form[key]}
-                  onChange={(e) => set(key, e.target.value)}
+                  onKeyDown={blockNonNumericKeys(true)}
+                  onChange={(e) => set(key, numericOnly(e.target.value, true))}
                 />
               </div>
             ))}
@@ -574,6 +562,7 @@ export default function BarcodeGenerator() {
               inputMode="numeric"
               placeholder="1"
               value={copies}
+              onKeyDown={blockNonNumericKeys(false)}
               onChange={(e) =>
                 setCopies(e.target.value.replace(/[^0-9]/g, "") || 1)
               }

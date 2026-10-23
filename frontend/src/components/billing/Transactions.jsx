@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
 import { FileText, XCircle, Printer, RotateCcw, Download } from "lucide-react";
 import { billAPI, openInvoice } from "../../services/api";
-import { formatCurrency, formatDateTime, formatQty, getErrorMessage, num, PAYMENT_LABELS, paymentColor, downloadCSV, debounce } from "../../utils/helpers";
+import { formatCurrency, formatDateTime, formatQty, getErrorMessage, num, PAYMENT_LABELS, paymentColor, downloadCSV, debounce, numericOnly, blockNonNumericKeys } from "../../utils/helpers";
 import { printReceipt } from "../../utils/receipt";
 import { PageLoader, EmptyState, Modal, SectionHeader, Page, Pagination, Pill, Table, Th, Td, SearchInput, Spinner, FormField } from "../shared/UI";
 import { useSettings } from "../../context/SettingsContext";
@@ -433,15 +433,18 @@ function ReturnModal({ bill, onClose, onDone }) {
                 </Td>
                 <Td label="Return qty" align="right">
                   <input
-                    type="number"
-                    min="0"
-                    max={avail}
-                    step="any"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0"
                     disabled={avail <= 0}
                     className="input-field"
                     style={{ width: 90, padding: "5px 8px" }}
                     value={qty[it.id] || ""}
-                    onChange={(e) => setQty({ ...qty, [it.id]: Math.min(avail, Math.max(0, num(e.target.value))) || "" })}
+                    onKeyDown={blockNonNumericKeys(true)}
+                    onChange={(e) => {
+                      const v = numericOnly(e.target.value, true);
+                      setQty({ ...qty, [it.id]: v === "" || v.endsWith(".") ? v : String(Math.min(avail, num(v))) });
+                    }}
                   />
                 </Td>
                 <Td label="Back to stock" align="center">

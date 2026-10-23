@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Printer, Calculator } from "lucide-react";
 import { reportAPI } from "../../services/api";
-import { formatCurrency, getErrorMessage, todayStr, num, PAYMENT_LABELS, escapeHtml, formatDate } from "../../utils/helpers";
+import { formatCurrency, getErrorMessage, todayStr, num, PAYMENT_LABELS, escapeHtml, formatDate, numericOnly, blockNonNumericKeys } from "../../utils/helpers";
 import { printHtml } from "../../utils/receipt";
 import { useSettings } from "../../context/SettingsContext";
 import { Page, SectionHeader, PageLoader, MiniStat } from "../shared/UI";
@@ -129,13 +129,13 @@ export default function DayEnd() {
                     {d}
                   </span>
                   <input
-                    type="number"
-                    min="0"
+                    type="text"
                     inputMode="numeric"
                     className="input-field"
                     style={{ padding: "6px 10px", textAlign: "center" }}
                     value={counts[d] || ""}
-                    onChange={(e) => setCounts({ ...counts, [d]: e.target.value })}
+                    onKeyDown={blockNonNumericKeys(false)}
+                    onChange={(e) => setCounts({ ...counts, [d]: numericOnly(e.target.value, false) })}
                     placeholder="0"
                     aria-label={`Number of ${settings.currencySymbol}${d} notes`}
                   />

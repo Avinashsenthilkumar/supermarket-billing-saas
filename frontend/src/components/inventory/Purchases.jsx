@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { ClipboardList, Plus, Trash2, XCircle, Search } from "lucide-react";
 import { purchaseAPI, supplierAPI, productAPI } from "../../services/api";
-import { formatCurrency, formatDate, formatQty, getErrorMessage, num, todayStr, debounce } from "../../utils/helpers";
+import { formatCurrency, formatDate, formatQty, getErrorMessage, num, todayStr, debounce, numericOnly, blockNonNumericKeys } from "../../utils/helpers";
 import { Page, SectionHeader, PageLoader, EmptyState, Table, Th, Td, Modal, Field, Grid, Spinner, Pill, Pagination, MiniStat, Toggle, ConfirmDialog } from "../shared/UI";
 
 export default function Purchases() {
@@ -383,9 +383,22 @@ function PurchaseForm({ isOpen, onClose, onSaved, suppliers }) {
             )}
             {items.map((it, i) => {
               const amount = num(it.costPrice) * num(it.quantity) * (1 + num(it.taxRate) / 100);
-              const inp = (k, w, type = "number") => (
-                <input className="input-field" type={type} value={it[k]} onChange={(e) => setItem(i, k, e.target.value)} style={{ width: w, padding: "5px 7px", fontSize: 12.5 }} />
-              );
+              // "number" boxes are text inputs that keep digits only, so letters can't be typed or pasted
+              const inp = (k, w, type = "number") =>
+                type === "number" ? (
+                  <input
+                    className="input-field"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={it[k]}
+                    onKeyDown={blockNonNumericKeys(true)}
+                    onChange={(e) => setItem(i, k, numericOnly(e.target.value, true))}
+                    style={{ width: w, padding: "5px 7px", fontSize: 12.5 }}
+                  />
+                ) : (
+                  <input className="input-field" type={type} value={it[k]} onChange={(e) => setItem(i, k, e.target.value)} style={{ width: w, padding: "5px 7px", fontSize: 12.5 }} />
+                );
               return (
                 <tr key={it.productId} style={{ borderTop: "1px solid var(--border)" }}>
                   <td style={{ ...cell, fontWeight: 500, maxWidth: 180 }}>{it.name}</td>

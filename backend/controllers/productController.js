@@ -35,6 +35,14 @@ const productFields = (b, partial = false) => {
   return out;
 };
 
+// Rejects text in a quantity field instead of silently treating it as 0
+// (which, on edit, would wipe the product's stock).
+const assertQuantity = (value, label = "Quantity") => {
+  if (value === undefined || value === null || value === "") return;
+  const n = Number(String(value).trim());
+  if (!Number.isFinite(n) || n < 0) throw new HttpError(400, `${label} must be a number`);
+};
+
 const assertBarcodeFree = async (db, barcode, exceptId) => {
   if (!barcode) return;
   const where = { barcode, isActive: true };
@@ -152,6 +160,8 @@ const createProduct = asyncHandler(async (req, res) => {
   const data = productFields(req.body || {});
   if (!data.name) throw new HttpError(400, "Product name is required");
   if (req.body.price === undefined || req.body.price === "") throw new HttpError(400, "Selling price is required");
+  assertQuantity(req.body.quantity, "Opening stock");
+  assertQuantity(req.body.reorderLevel, "Reorder level");
   await assertProductLimit(req);
   await assertBarcodeFree(db, data.barcode);
   const openingQty = round3(Math.max(0, num(req.body.quantity)));
@@ -177,6 +187,8 @@ const updateProduct = asyncHandler(async (req, res) => {
   if (!product) throw new HttpError(404, "Product not found");
   const data = productFields(req.body || {}, true);
   if (data.name === null) throw new HttpError(400, "Product name is required");
+  assertQuantity(req.body.quantity, "Stock");
+  assertQuantity(req.body.reorderLevel, "Reorder level");
   if (data.barcode !== undefined) await assertBarcodeFree(db, data.barcode, product.id);
 
   const t = await req.tenant.sequelize.transaction();
@@ -201,6 +213,8 @@ const updateProduct = asyncHandler(async (req, res) => {
 const updateStock = asyncHandler(async (req, res) => {
   const db = req.db;
   const { operation = "add", reason, note } = req.body || {};
+  if (req.body?.quantity === undefined || req.body?.quantity === "") throw new HttpError(400, "Enter a valid quantity");
+  assertQuantity(req.body.quantity);
   const amount = round3(num(req.body?.quantity));
   if (!(amount >= 0)) throw new HttpError(400, "Enter a valid quantity");
 

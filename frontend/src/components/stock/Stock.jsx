@@ -1,7 +1,7 @@
 // src/components/stock/Stock.jsx
 import React, { useState, useEffect, useCallback } from "react";
 import { productAPI, reportAPI, supplierAPI } from "../../services/api";
-import { formatCurrency, formatQty, formatDateTime, getErrorMessage, debounce, num, getStockBadge } from "../../utils/helpers";
+import { formatCurrency, formatQty, formatDateTime, getErrorMessage, debounce, num, getStockBadge, numericOnly, blockNonNumericKeys } from "../../utils/helpers";
 import { useSettings } from "../../context/SettingsContext";
 import {
   Spinner,
@@ -185,15 +185,16 @@ function ProductModal({ isOpen, onClose, product, onSaved }) {
     }
   };
 
+  // props.numeric: "int" (whole numbers only) or "decimal" — the box then accepts digits only
   const input = (label, key, props = {}, span = 1) => (
     <Field label={label} span={span} required={props.required} hint={props.hint}>
       <input
         className="input-field"
         value={form[key] ?? ""}
-        onChange={(e) => set(key, e.target.value)}
+        onChange={(e) => set(key, props.numeric ? numericOnly(e.target.value, props.numeric === "decimal") : e.target.value)}
+        onKeyDown={props.numeric ? blockNonNumericKeys(props.numeric === "decimal") : undefined}
         type={props.type || "text"}
-        min={props.type === "number" ? 0 : undefined}
-        step={props.type === "number" ? "any" : undefined}
+        inputMode={props.numeric ? (props.numeric === "decimal" ? "decimal" : "numeric") : undefined}
         placeholder={props.placeholder}
         list={props.list}
         style={props.mono ? { fontFamily: "JetBrains Mono, monospace" } : undefined}
@@ -219,9 +220,9 @@ function ProductModal({ isOpen, onClose, product, onSaved }) {
         </Grid>
 
         <Grid cols={4}>
-          {input("MRP", "mrp", { type: "number" })}
-          {input("Selling price", "price", { type: "number", required: true })}
-          {input("Cost price", "costPrice", { type: "number", hint: margin !== null ? `Margin ${margin.toFixed(1)}%` : "For profit reports" })}
+          {input("MRP", "mrp", { numeric: "decimal" })}
+          {input("Selling price", "price", { numeric: "decimal", required: true })}
+          {input("Cost price", "costPrice", { numeric: "decimal", hint: margin !== null ? `Margin ${margin.toFixed(1)}%` : "For profit reports" })}
           <Field label={`${settings.taxLabel || "GST"} %`}>
             <select className="input-field" value={form.taxRate} onChange={(e) => set("taxRate", e.target.value)}>
               {[...new Set([...GST_RATES, num(form.taxRate)])].map((r) => (
@@ -247,8 +248,8 @@ function ProductModal({ isOpen, onClose, product, onSaved }) {
               ))}
             </select>
           </Field>
-          {input(isEdit ? "Stock (adjusts)" : "Opening stock", "quantity", { type: "number" })}
-          {input("Reorder level", "reorderLevel", { type: "number", hint: "Low-stock alert" })}
+          {input(isEdit ? "Stock (adjusts)" : "Opening stock", "quantity", { numeric: form.allowDecimal ? "decimal" : "int" })}
+          {input("Reorder level", "reorderLevel", { numeric: form.allowDecimal ? "decimal" : "int", hint: "Low-stock alert" })}
           {input("HSN code", "hsnCode", { mono: true })}
         </Grid>
         <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: "var(--text-secondary)", marginTop: -6 }}>
@@ -337,7 +338,16 @@ function AdjustModal({ product, onClose, onSaved }) {
       </div>
       <Grid cols={2}>
         <Field label={`Quantity (${product.unit || "pcs"})`}>
-          <input className="input-field" type="number" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} autoFocus />
+          <input
+            className="input-field"
+            type="text"
+            inputMode={product.allowDecimal ? "decimal" : "numeric"}
+            placeholder="0"
+            value={qty}
+            onChange={(e) => setQty(numericOnly(e.target.value, !!product.allowDecimal))}
+            onKeyDown={blockNonNumericKeys(!!product.allowDecimal)}
+            autoFocus
+          />
         </Field>
         <Field label="Reason">
           <select className="input-field" value={reason} onChange={(e) => setReason(e.target.value)}>
@@ -530,7 +540,8 @@ function ScanForm({ scanned, isNew, onSubmit, onReset, loading }) {
                 type="text"
                 inputMode="decimal"
                 value={price}
-                onChange={(e) => setPrice(e.target.value)}
+                onChange={(e) => setPrice(numericOnly(e.target.value, true))}
+                onKeyDown={blockNonNumericKeys(true)}
                 className="input-field"
                 placeholder="0.00"
               />
@@ -1286,21 +1297,69 @@ function BulkImportModal({ isOpen, onClose, onImported }) {
     </Modal>
   );
 }
+// Pulls every active product (the list API pages at 1000) for the current-stock export
+const fetchAllProducts = async () => {
+  const all = [];
+  let page = 1;
+  let pages = 1;
+  do {
+    const res = await productAPI.getAll({ page, limit: 1000, sort: "name" });
+    all.push(...res.data.data.products);
+    pages = res.data.data.pages || 1;
+    page += 1;
+  } while (page <= pages);
+  return all;
+};
+
 function ReportModal({ isOpen, onClose, onDownload }) {
-  const [type, setType] = useState("thisMonth");
+  const [type, setType] = useState("current");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(false);
+  const [stockList, setStockList] = useState([]);
+  const [listLoading, setListLoading] = useState(false);
+  const [listSearch, setListSearch] = useState("");
+
+  // Every time the modal opens it starts on "Current Stock" and loads the live list
+  useEffect(() => {
+    if (!isOpen) return;
+    setType("current");
+    setListSearch("");
+    let cancelled = false;
+    setListLoading(true);
+    fetchAllProducts()
+      .then((list) => !cancelled && setStockList(list))
+      .catch((err) => !cancelled && toast.error(getErrorMessage(err)))
+      .finally(() => !cancelled && setListLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   const options = [
+    { key: "current", label: "Current Stock" },
     { key: "thisMonth", label: "This Month" },
     { key: "lastMonth", label: "Last Month" },
     { key: "custom", label: "Custom" },
   ];
 
+  const q = listSearch.trim().toLowerCase();
+  const visible = q
+    ? stockList.filter((p) => [p.name, p.barcode, p.category, p.brand].some((v) => v && String(v).toLowerCase().includes(q)))
+    : stockList;
+  const totalCostValue = stockList.reduce((a, p) => a + Math.max(0, num(p.quantity)) * num(p.costPrice), 0);
+  const totalSaleValue = stockList.reduce((a, p) => a + Math.max(0, num(p.quantity)) * num(p.price), 0);
+
   const handleDownload = async () => {
+    if (type === "current") {
+      if (listLoading) return;
+      if (!stockList.length) {
+        toast.error("No products in stock to export");
+        return;
+      }
+    }
     if (type === "custom") {
       if (!startDate || !endDate) {
         toast.error("Select both start and end dates");
@@ -1313,34 +1372,98 @@ function ReportModal({ isOpen, onClose, onDownload }) {
     }
     setLoading(true);
     try {
-      await onDownload({ type, startDate, endDate });
+      await onDownload({ type, startDate, endDate, items: stockList });
     } finally {
       setLoading(false);
     }
   };
+
+  const th = { padding: "8px 10px", fontWeight: 500, fontSize: 11.5, color: "var(--text-muted)", textAlign: "left", whiteSpace: "nowrap", position: "sticky", top: 0, background: "var(--bg-secondary)" };
+  const td = { padding: "8px 10px", fontSize: 12.5, borderTop: "1px solid var(--border)" };
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       title="Download Stock Report"
-      maxWidth={500}
+      maxWidth={type === "current" ? 760 : 500}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <FormField label="Report Period">
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {options.map((o) => (
               <button
                 key={o.key}
                 onClick={() => setType(o.key)}
                 className={type === o.key ? "btn-primary" : "btn-ghost"}
-                style={{ flex: 1, justifyContent: "center", fontSize: 13 }}
+                style={{ flex: "1 1 100px", justifyContent: "center", fontSize: 13 }}
               >
                 {o.label}
               </button>
             ))}
           </div>
         </FormField>
+
+        {type === "current" && (
+          <>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>
+                <b style={{ color: "var(--text-primary)" }}>{stockList.length}</b> products · Value (cost) <b style={{ color: "var(--text-primary)" }}>{formatCurrency(totalCostValue)}</b> · (selling){" "}
+                <b style={{ color: "var(--text-primary)" }}>{formatCurrency(totalSaleValue)}</b>
+              </span>
+              <SearchInput value={listSearch} onChange={setListSearch} placeholder="Filter list…" style={{ maxWidth: 220 }} />
+            </div>
+            <div style={{ border: "1px solid var(--border)", borderRadius: 10, maxHeight: 340, overflow: "auto" }}>
+              {listLoading ? (
+                <div style={{ display: "flex", justifyContent: "center", padding: 32 }}>
+                  <Spinner size={20} />
+                </div>
+              ) : visible.length === 0 ? (
+                <p style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>No products found</p>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
+                  <thead>
+                    <tr>
+                      <th style={th}>Product</th>
+                      <th style={th}>Category</th>
+                      <th style={{ ...th, textAlign: "right" }}>Stock</th>
+                      <th style={{ ...th, textAlign: "right" }}>Price</th>
+                      <th style={{ ...th, textAlign: "right" }}>Value (cost)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((p) => {
+                      const qty = num(p.quantity);
+                      const low = qty > 0 && qty <= num(p.reorderLevel);
+                      return (
+                        <tr key={p.id}>
+                          <td style={{ ...td, fontWeight: 500, color: "var(--text-primary)" }}>
+                            {p.name}
+                            {p.barcode && <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "JetBrains Mono, monospace" }}>{p.barcode}</div>}
+                          </td>
+                          <td style={{ ...td, color: "var(--text-secondary)" }}>{p.category || "—"}</td>
+                          <td
+                            style={{
+                              ...td,
+                              textAlign: "right",
+                              fontWeight: 600,
+                              color: qty <= 0 ? "var(--danger)" : low ? "var(--accent-dark)" : "var(--text-primary)",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {formatQty(qty, p.unit)}
+                          </td>
+                          <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>{formatCurrency(p.price)}</td>
+                          <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>{formatCurrency(Math.max(0, qty) * num(p.costPrice))}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </>
+        )}
 
         {type === "custom" && (
           <div className="form-grid" style={{ gap: 12 }}>
@@ -1364,8 +1487,9 @@ function ReportModal({ isOpen, onClose, onDownload }) {
         )}
 
         <p style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
-          Generates a PDF with opening stock, purchases, sales, adjustments and
-          closing stock for the selected period.
+          {type === "current"
+            ? "Generates a PDF of the stock on hand right now — every product with its current quantity and stock value."
+            : "Generates a PDF with opening stock, purchases, sales, adjustments and closing stock for the selected period."}
         </p>
 
         <div style={{ display: "flex", gap: 10, paddingTop: 4 }}>
@@ -1379,7 +1503,7 @@ function ReportModal({ isOpen, onClose, onDownload }) {
           <button
             className="btn-primary"
             onClick={handleDownload}
-            disabled={loading}
+            disabled={loading || (type === "current" && listLoading)}
             style={{ flex: 1, justifyContent: "center" }}
           >
             {loading ? (
@@ -1394,6 +1518,7 @@ function ReportModal({ isOpen, onClose, onDownload }) {
     </Modal>
   );
 }
+
 export default function Stock() {
   const { settings } = useSettings();
   const [status, setStatus] = useState("");
@@ -1485,13 +1610,65 @@ export default function Stock() {
     color: "var(--text-muted)",
     transition: "all 0.12s ease",
   };
-  const downloadReport = async ({ type, startDate, endDate }) => {
+  const downloadReport = async ({ type, startDate, endDate, items = [] }) => {
     const fmt = (d) => {
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, "0");
       const day = String(d.getDate()).padStart(2, "0");
       return `${y}-${m}-${day}`;
     };
+
+    // Current stock — the live list shown in the modal
+    if (type === "current") {
+      try {
+        const now = new Date();
+        const rs = (v) => `Rs. ${num(v).toFixed(2)}`;
+        const doc = new jsPDF("landscape");
+        doc.setFontSize(18);
+        doc.text(settings.businessName || "Stock Report", 14, 18);
+        doc.setFontSize(13);
+        doc.text("Current Stock Report", 14, 28);
+        doc.setFontSize(10);
+        doc.text(`As on : ${now.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`, 14, 36);
+
+        let totalCost = 0;
+        let totalSale = 0;
+        const body = items.map((p, i) => {
+          const qty = num(p.quantity);
+          const cost = Math.max(0, qty) * num(p.costPrice);
+          totalCost += cost;
+          totalSale += Math.max(0, qty) * num(p.price);
+          return [
+            i + 1,
+            p.name,
+            p.barcode || "-",
+            p.category || "-",
+            `${Math.round(qty * 1000) / 1000} ${p.unit || ""}`.trim(),
+            rs(p.costPrice),
+            rs(p.price),
+            rs(cost),
+          ];
+        });
+
+        autoTable(doc, {
+          startY: 44,
+          head: [["#", "Product", "Barcode", "Category", "Current Stock", "Cost Price", "Selling Price", "Stock Value (cost)"]],
+          body,
+          foot: [["", `${items.length} products`, "", "", "", "", `Sale value: ${rs(totalSale)}`, rs(totalCost)]],
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [40, 40, 40] },
+          footStyles: { fillColor: [240, 240, 240], textColor: [20, 20, 20], fontStyle: "bold" },
+          columnStyles: { 0: { cellWidth: 10 }, 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" }, 7: { halign: "right" } },
+        });
+
+        doc.save(`Current_Stock_${fmt(now)}.pdf`);
+        setShowReportModal(false);
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to generate stock report");
+      }
+      return;
+    }
 
     let from, to;
     const today = new Date();
@@ -1873,12 +2050,13 @@ export default function Stock() {
                             }}
                           >
                             <input
-                              type="number"
-                              min="0"
+                              type="text"
+                              inputMode="numeric"
                               placeholder="copies"
                               value={printSelections[p.id] || ""}
+                              onKeyDown={blockNonNumericKeys(false)}
                               onChange={(e) => {
-                                const val = e.target.value;
+                                const val = numericOnly(e.target.value, false);
                                 setPrintSelections((prev) => ({
                                   ...prev,
                                   [p.id]: val,
