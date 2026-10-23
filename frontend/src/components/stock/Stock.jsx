@@ -1673,18 +1673,26 @@ export default function Stock() {
       return;
     }
 
-    let from, to;
+    let from, to, period;
     const today = new Date();
+    // Named period for the "nothing to report" message — "in September 2026",
+    // "between 01 Sep 2026 and 07 Sep 2026", "on 21 Oct 2026"
+    const asMonth = (d) => d.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+    const asDay = (s) => new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 
     if (type === "thisMonth") {
       from = fmt(new Date(today.getFullYear(), today.getMonth(), 1));
       to = fmt(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+      period = `in ${asMonth(today)}`;
     } else if (type === "lastMonth") {
-      from = fmt(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+      const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      from = fmt(lastMonth);
       to = fmt(new Date(today.getFullYear(), today.getMonth(), 0));
+      period = `in ${asMonth(lastMonth)}`;
     } else {
       from = startDate;
       to = endDate;
+      period = from === to ? `on ${asDay(from)}` : `between ${asDay(from)} and ${asDay(to)}`;
     }
 
     try {
@@ -1694,9 +1702,10 @@ export default function Stock() {
       });
 
       const report = res.data.data;
-      // Every product is filtered out when nothing was bought, sold or held in the period
+      // Every product is filtered out when nothing was bought, sold or held in the period —
+      // say so and keep the modal open instead of saving an empty PDF
       if (!report.length) {
-        toast.error("No stock activity between those dates");
+        toast.error(`No stock activity ${period} — nothing to download`, { duration: 5000 });
         return;
       }
 
