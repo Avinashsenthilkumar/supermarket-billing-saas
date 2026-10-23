@@ -43,11 +43,21 @@ const thermalInvoice = (doc, bill, s, width) => {
     else doc.moveTo(lx, y).lineTo(lx + cw, y).stroke();
     doc.moveDown(0.3);
   };
+  // Label and value are drawn at the same y. PDFKit leaves doc.y wherever the LAST text
+  // call ended, so an empty value (Cashier, "Items: n  Qty: n") pulled doc.y back to the
+  // top of the row and the next row printed on top of it. Keep the lower of the two ends.
+  // The two columns also used to overlap sideways (0.6 wide starting at 0.4) — now 0.52/0.46.
   const row = (label, value, bold = false, size = small) => {
     const y = doc.y;
     doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(size);
-    doc.text(label, lx, y, { width: cw * 0.6 });
-    doc.text(value, lx + cw * 0.4, y, { width: cw * 0.6, align: "right" });
+    doc.text(label, lx, y, { width: cw * 0.52 });
+    const afterLabel = doc.y;
+    let afterValue = y;
+    if (value !== "" && value !== null && value !== undefined) {
+      doc.text(String(value), lx + cw * 0.54, y, { width: cw * 0.46, align: "right" });
+      afterValue = doc.y;
+    }
+    doc.y = Math.max(afterLabel, afterValue);
     doc.moveDown(0.25);
   };
 

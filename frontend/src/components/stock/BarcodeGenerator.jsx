@@ -423,7 +423,7 @@ export default function BarcodeGenerator() {
             {
               label: "NET QUANTITY (saved to stock, not printed)",
               key: "qty",
-              placeholder: "e.g. 1kg, 500ml, 12pcs",
+              placeholder: "e.g. 500ml, 1kg, 12",
             },
             {
               label: "CATEGORY",
@@ -450,7 +450,7 @@ export default function BarcodeGenerator() {
                 type="text"
                 placeholder={placeholder}
                 value={form[key]}
-                onChange={(e) => set(key, e.target.value)}
+                onChange={(e) => set(key, key === "qty" ? e.target.value.replace(/^[^0-9]+/, "") : e.target.value)}
               />
             </div>
           ))}

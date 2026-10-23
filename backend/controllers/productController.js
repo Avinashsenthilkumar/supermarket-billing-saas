@@ -6,6 +6,13 @@ const { moveStock } = require("../utils/stock");
 
 const DECIMAL_UNITS = ["kg", "g", "l", "ml", "mtr"];
 
+// Net quantity has to start with a number — "500ml", "1kg", "12" are fine, "Snacks" is not
+const netQtyField = (v) => {
+  const nq = str(v, 40);
+  if (nq && !/^[0-9]/.test(nq.trim())) throw new HttpError(400, "Net quantity must start with a number (e.g. 500ml, 1kg)");
+  return nq;
+};
+
 // Normalise incoming product fields. `partial` = only include keys present in body.
 const productFields = (b, partial = false) => {
   const out = {};
@@ -19,7 +26,7 @@ const productFields = (b, partial = false) => {
   if (has("allowDecimal") || has("unit")) {
     out.allowDecimal = b.allowDecimal !== undefined ? bool(b.allowDecimal) : DECIMAL_UNITS.includes(String(b.unit || "").toLowerCase());
   }
-  if (has("netQty")) out.netQty = str(b.netQty, 40);
+  if (has("netQty")) out.netQty = netQtyField(b.netQty);
   if (has("hsnCode")) out.hsnCode = str(b.hsnCode, 20);
   if (has("taxRate")) out.taxRate = Math.min(100, Math.max(0, num(b.taxRate)));
   if (has("mrp")) out.mrp = b.mrp === "" || b.mrp === null || b.mrp === undefined ? null : round2(num(b.mrp));
@@ -269,7 +276,7 @@ const scanBarcode = asyncHandler(async (req, res) => {
       const updates = {};
       if (b.expiryDate) updates.expiryDate = String(b.expiryDate).slice(0, 10);
       if (b.mrp !== undefined && b.mrp !== "" && b.mrp !== null) updates.mrp = round2(num(b.mrp));
-      if (b.netQty) updates.netQty = str(b.netQty, 40);
+      if (b.netQty) updates.netQty = netQtyField(b.netQty);
       if (b.price !== undefined && b.price !== "") updates.price = round2(num(b.price));
       if (b.costPrice !== undefined && b.costPrice !== "") updates.costPrice = round2(num(b.costPrice));
       if (b.name) updates.name = str(b.name, 180);

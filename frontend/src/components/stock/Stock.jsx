@@ -63,6 +63,8 @@ const EMPTY = {
   location: "",
 };
 const DECIMAL_UNITS = ["kg", "g", "l", "ml", "mtr"];
+// Net quantity must start with a number — "500ml", "1kg", "12" pass, "Snacks" is stripped to ""
+const netQtyValue = (v) => String(v ?? "").replace(/^[^0-9]+/, "");
 const GST_RATES = [0, 5, 12, 18, 28];
 
 const stockBadge = (qty, reorder = 10) => getStockBadge(qty, reorder);
@@ -156,6 +158,7 @@ function ProductModal({ isOpen, onClose, product, onSaved }) {
   const handleSubmit = async () => {
     if (!form.name.trim()) return toast.error("Product name is required");
     if (form.price === "" || num(form.price) < 0) return toast.error("Selling price is required");
+    if (form.netQty.trim() && !/^[0-9]/.test(form.netQty.trim())) return toast.error("Net quantity must start with a number (e.g. 500ml, 1kg)");
     if (form.mrp !== "" && num(form.mrp) > 0 && num(form.price) > num(form.mrp)) {
       if (!window.confirm("Selling price is higher than MRP. Save anyway?")) return;
     }
@@ -191,7 +194,7 @@ function ProductModal({ isOpen, onClose, product, onSaved }) {
       <input
         className="input-field"
         value={form[key] ?? ""}
-        onChange={(e) => set(key, props.numeric ? numericOnly(e.target.value, props.numeric === "decimal") : e.target.value)}
+        onChange={(e) => set(key, props.numeric ? numericOnly(e.target.value, props.numeric === "decimal") : props.netQty ? netQtyValue(e.target.value) : e.target.value)}
         onKeyDown={props.numeric ? blockNonNumericKeys(props.numeric === "decimal") : undefined}
         type={props.type || "text"}
         inputMode={props.numeric ? (props.numeric === "decimal" ? "decimal" : "numeric") : undefined}
@@ -258,7 +261,7 @@ function ProductModal({ isOpen, onClose, product, onSaved }) {
         </label>
 
         <Grid cols={4}>
-          {input("Net quantity", "netQty", { placeholder: "1kg / 500ml" })}
+          {input("Net quantity", "netQty", { netQty: true, placeholder: "500ml / 1kg / 12" })}
           {input("Expiry date", "expiryDate", { type: "date" })}
           {input("Batch no.", "batchNo")}
           {input("Rack / shelf", "location")}
