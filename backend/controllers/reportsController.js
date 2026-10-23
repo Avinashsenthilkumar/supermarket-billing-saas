@@ -498,17 +498,22 @@ const getStockReport = asyncHandler(async (req, res) => {
             COALESCE((SELECT SUM(m.quantity) FROM stock_movements m WHERE m.product_id = p.id AND m.createdAt > :end),0) AS afterQty,
             COALESCE((SELECT SUM(CASE WHEN m.type = 'adjustment' THEN m.quantity ELSE 0 END)
                         FROM stock_movements m WHERE m.product_id = p.id AND m.createdAt BETWEEN :start AND :end),0) AS adjustQty
-       FROM products p WHERE p.is_active = 1 ORDER BY p.name ASC`,
+       FROM products p WHERE p.is_active = 1 AND p.createdAt <= :end ORDER BY p.name ASC`,
     { start, end },
   );
-  const data = rows.map((r) => {
+  // Only products that were part of this period belong in the report. The query already
+  // drops anything created after it; a product that existed but held no stock and saw no
+  // movement is dropped here too, instead of printing a row of zeros.
+  const data = [];
+  for (const r of rows) {
     const closing = round3(Number(r.currentStock) - Number(r.afterQty));
     const sold = round3(r.soldQty);
     const returned = round3(r.returnedQty);
     const inward = round3(r.inwardQty);
     const adjust = round3(r.adjustQty);
     const opening = round3(closing - inward + sold - returned - adjust);
-    return {
+    if (!opening && !closing && !inward && !sold && !returned && !adjust) continue;
+    data.push({
       id: r.id,
       name: r.name,
       barcode: r.barcode,
@@ -523,8 +528,8 @@ const getStockReport = asyncHandler(async (req, res) => {
       closingStock: closing,
       currentStock: round3(r.currentStock),
       stockValue: round2(Math.max(0, closing) * Number(r.costPrice)),
-    };
-  });
+    });
+  }
   res.json({ success: true, data });
 });
 

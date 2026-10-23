@@ -1694,6 +1694,11 @@ export default function Stock() {
       });
 
       const report = res.data.data;
+      // Every product is filtered out when nothing was bought, sold or held in the period
+      if (!report.length) {
+        toast.error("No stock activity between those dates");
+        return;
+      }
 
       const doc = new jsPDF("landscape");
 
